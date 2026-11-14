@@ -385,7 +385,9 @@ fn clean_text(text: &str) -> String {
 
 /// The words of pdf-lib's `breakTextIntoLines` regex:
 /// `(\n|\f|\r|\u000B)|((.*?)($|<break>|...))` with the `gm` flags.
-fn words(text: &[char], breaks: &[Vec<char>]) -> Vec<String> {
+/// Unlike pdf-lib, a word never ends inside a cluster (a letter and its
+/// marks): `keep[i]` is true where a word may end before char `i`.
+fn words(text: &[char], breaks: &[Vec<char>], keep: &[bool]) -> Vec<String> {
     // line terminators: where `$` matches and `.` does not
     let terminator = |c: char| matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}');
     let mut out = Vec::new();
@@ -410,7 +412,10 @@ fn words(text: &[char], breaks: &[Vec<char>]) -> Vec<String> {
                     None
                 }
             });
-            if let Some(end) = hit {
+            if let Some(mut end) = hit {
+                while end < text.len() && !keep.get(end).copied().unwrap_or(true) && !terminator(text[end]) {
+                    end += 1;
+                }
                 break end;
             }
             p += 1;
@@ -430,11 +435,13 @@ fn break_lines(
     f: &mut font::Embedded,
     size: f64,
 ) -> Result<Vec<String>> {
-    let chars: Vec<char> = clean_text(text).chars().collect();
+    let clean = clean_text(text);
+    let chars: Vec<char> = clean.chars().collect();
+    let keep = f.break_points(&clean)?;
     let mut lines = Vec::new();
     let mut line = String::new();
     let mut width = 0.0;
-    for word in words(&chars, breaks) {
+    for word in words(&chars, breaks, &keep) {
         if word.chars().count() == 1 && word.chars().all(is_newline) {
             if !line.is_empty() {
                 lines.push(std::mem::take(&mut line));
@@ -877,7 +884,7 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
                     .collect();
                 break_lines(text, &breaks, max_width, f, size)?
             };
-            let encoded = lines.iter().map(|l| f.encode(l)).collect::<Result<Vec<_>>>()?;
+            let shown = lines.iter().map(|l| f.show_text(l, size)).collect::<Result<Vec<_>>>()?;
             let font_name = resource(pdf, state, page, ResKey::Font(font_ref), b"Font", f.name()?, || {
                 Object::Reference(font_ref)
             })?;
@@ -899,10 +906,9 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
                 ],
                 "Tm",
             );
-            for hex in encoded {
-                o.0.push(b'<');
-                o.0.extend_from_slice(&hex);
-                o.0.extend_from_slice(b"> Tj\nT*\n");
+            for ops in shown {
+                o.0.extend_from_slice(&ops);
+                o.0.extend_from_slice(b"\nT*\n");
             }
             o.op(&[], "ET");
             o.op(&[], "Q");
@@ -1261,7 +1267,7 @@ mod tests {
         let w = |t: &str, b: &[&str]| {
             let chars: Vec<char> = t.chars().collect();
             let breaks: Vec<Vec<char>> = b.iter().map(|b| b.chars().collect()).collect();
-            words(&chars, &breaks)
+            words(&chars, &breaks, &[])
         };
         assert_eq!(w("ab cd\nef", &[" "]), ["ab ", "cd", "\n", "ef", ""]);
         assert_eq!(w("abc", &[""]), ["a", "b", "c", ""]);

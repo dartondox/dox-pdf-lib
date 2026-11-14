@@ -243,6 +243,29 @@ impl Embedded {
         }
     }
 
+    /// The operators that show `text` (for drawText and other areas), like
+    /// pdf-lib's `<hex> Tj`. See `CustomFont::show_text`.
+    pub fn show_text(&mut self, text: &str, size: f64) -> Result<Vec<u8>> {
+        match self {
+            Embedded::Standard(_) => {
+                let mut out = vec![b'<'];
+                out.extend(self.encode(text)?);
+                out.extend_from_slice(b"> Tj");
+                Ok(out)
+            }
+            Embedded::Custom(c) => c.show_text(text, size),
+        }
+    }
+
+    /// Where a line may break without splitting a letter from its marks:
+    /// `true` per char, before it. Every char for a standard font.
+    pub fn break_points(&self, text: &str) -> Result<Vec<bool>> {
+        match self {
+            Embedded::Standard(_) => Ok(vec![true; text.chars().count()]),
+            Embedded::Custom(c) => c.break_points(text),
+        }
+    }
+
     /// pdf-lib's `widthOfTextAtSize`.
     pub fn width_of_text(&mut self, text: &str, size: f64) -> Result<f64> {
         match self {
