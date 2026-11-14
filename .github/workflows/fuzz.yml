@@ -32,6 +32,7 @@ jobs:
           - { target: image, max_len: 8192 }
           - { target: svg, max_len: 8192 }
           - { target: segment, max_len: 4096 }
+          - { target: conformance, max_len: 4096 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

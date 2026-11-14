@@ -2,6 +2,7 @@
 //! is one new line here. See CONTRIBUTING.md, "Native layout".
 
 mod attachment;
+mod conformance;
 mod custom_font;
 mod document;
 mod draw;
