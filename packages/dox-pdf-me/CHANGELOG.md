@@ -10,3 +10,5 @@
 - Roboto is the default font, like in pdfme.
 - Barcodes are drawn as vectors.
 - Images with an EXIF orientation are turned like in pdfme.
+- Thai, Lao, Khmer and Myanmar text breaks between words, like pdfme with
+  `Intl.Segmenter` (needs `dictionaryWordBreaks` of dox_pdf_lib 0.0.2).

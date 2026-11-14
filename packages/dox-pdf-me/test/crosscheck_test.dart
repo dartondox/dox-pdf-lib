@@ -25,6 +25,7 @@ const Map<String, double> tolerance = <String, double>{
   'barcode': 0.03,
   'reencoded': 0.02,
   'matrix': 0.1,
+  'lines': 0.1,
 };
 
 void main() {
@@ -103,6 +104,18 @@ void main() {
           );
         }
       }
+      if (compare == 'lines') {
+        List<dynamic> schemas =
+            ((c['template'] as Map<String, dynamic>)['schemas']
+                    as List<dynamic>)[0]
+                as List<dynamic>;
+        Map<String, String> a = _lines('$outDir/dox/$name.pdf', schemas);
+        Map<String, String> b = _lines('$outDir/pdfme/$name.pdf', schemas);
+        printOnFailure('$name lines: $a\npdfme: $b');
+        if (a.toString() != b.toString()) {
+          failures.add('$name: the lines differ from pdfme');
+        }
+      }
       if (compare == 'matrix' && zbar) {
         List<String> a = _decode('$outDir/dox/$name.pdf', '$name/dox');
         List<String> b = _decode('$outDir/pdfme/$name.pdf', '$name/pdfme');
@@ -119,6 +132,58 @@ void main() {
     expect(failures, isEmpty);
   }, skip: ready ? false : 'needs npm ci in tool/crosscheck and pdftoppm');
 }
+
+/// The text lines of [pdf] from `pdftotext -bbox`. The key is the schema
+/// box the line starts in (by [schemas] of the first page) and the top of
+/// the line. The value is the sorted base letters of Thai, Lao, Khmer and
+/// Myanmar on that line. Only the base letters are compared: the vowels and
+/// marks come out in another order (or split) from a pdfme file, because
+/// pdfme writes no `/ActualText`.
+Map<String, String> _lines(String pdf, List<dynamic> schemas) {
+  ProcessResult r = Process.runSync('pdftotext', <String>['-bbox', pdf, '-']);
+  if (r.exitCode != 0) throw StateError('pdftotext: ${r.stderr}');
+  RegExp word = RegExp(
+    r'<word xMin="([\d.]+)" yMin="([\d.]+)"[^>]*>([^<]*)</word>',
+  );
+  const double mm = 72 / 25.4;
+  Map<String, List<int>> lines = <String, List<int>>{};
+  for (RegExpMatch m in word.allMatches(r.stdout as String)) {
+    double x = double.parse(m[1]!) / mm;
+    double y = double.parse(m[2]!) / mm;
+    // the box that holds the word start; the lowest one when boxes share
+    // a column (text can overflow the box above)
+    int box = -1;
+    num top = -1;
+    for (int i = 0; i < schemas.length; i++) {
+      Map<String, dynamic> s = schemas[i] as Map<String, dynamic>;
+      Map<String, dynamic> p = s['position'] as Map<String, dynamic>;
+      num left = p['x'] as num;
+      num boxTop = p['y'] as num;
+      if (x >= left - 0.5 &&
+          x < left + (s['width'] as num) &&
+          y >= boxTop - 2 &&
+          boxTop > top) {
+        box = i;
+        top = boxTop;
+      }
+    }
+    String key = '$box@${y.toStringAsFixed(1)}';
+    lines
+        .putIfAbsent(key, () => <int>[])
+        .addAll(m[3]!.runes.where(_isBaseLetter));
+  }
+  return <String, String>{
+    for (String key in lines.keys.toList()..sort())
+      key: String.fromCharCodes(lines[key]!..sort()),
+  };
+}
+
+bool _isBaseLetter(int c) =>
+    (c >= 0x0e01 && c <= 0x0e2e) ||
+    (c >= 0x0e81 && c <= 0x0eae) ||
+    (c >= 0x0edc && c <= 0x0edf) ||
+    (c >= 0x1000 && c <= 0x102a) ||
+    (c >= 0x1780 && c <= 0x17b3);
 
 /// The decoded codes of the pages of [pdf] (rendered at 200 dpi), sorted.
 List<String> _decode(String pdf, String name) {

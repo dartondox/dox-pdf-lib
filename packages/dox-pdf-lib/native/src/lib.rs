@@ -12,6 +12,7 @@ mod form;
 mod image;
 mod metadata;
 mod page;
+mod segment;
 
 // the entry points of the fuzz targets in `fuzz/`
 #[cfg(fuzzing)]

@@ -22,6 +22,10 @@ read-fonts = "0.47.0"
 subsetter = { version = "0.2.6", default-features = false }
 # unicode-bidi: the order of right-to-left and left-to-right runs (UAX #9)
 unicode-bidi = "0.3.18"
+# icu_segmenter: only its compiled word dictionaries of Thai, Lao, Khmer and
+# Myanmar (see src/segment.rs); no LSTM models
+icu_segmenter = { version = "2.4.0", default-features = false, features = ["compiled_data"] }
+icu_provider = { version = "2.4.0", default-features = false }
 
 # cargo fuzz builds with `--cfg fuzzing`, see src/fuzz.rs
 [lints.rust]

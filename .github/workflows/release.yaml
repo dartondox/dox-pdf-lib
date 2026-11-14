@@ -71,6 +71,15 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # the licenses of the code and data in the libraries go next to them
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: src
+          sparse-checkout: packages/dox-pdf-lib/THIRD_PARTY_NOTICES
+          sparse-checkout-cone-mode: false
+      - name: Add the third party notices
+        run: cp src/packages/dox-pdf-lib/THIRD_PARTY_NOTICES dist/
       - name: Upload to the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,7 +98,7 @@ jobs:
             gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" ./* --repo "$GITHUB_REPOSITORY" ${pre[@]+"${pre[@]}"} \
-              --title "$TAG" --notes "Ready-built $LIB libraries. See SHA256SUMS."
+              --title "$TAG" --notes "Ready-built $LIB libraries. See SHA256SUMS. Licenses: THIRD_PARTY_NOTICES."
           fi
 
   publish-pdf-lib:

@@ -7,10 +7,8 @@
 //   AI, SA, SG, XX -> AL
 //   CJ -> NS (strict Japanese rules for small kana)
 //
-// Thai, Lao, Khmer and Myanmar (class SA): pdfme adds extra break points
-// from the Intl.Segmenter word dictionary. Dart has no such segmenter. So
-// this port adds NO extra breaks inside SA text. This is the behavior pdfme
-// documents for platforms without a segmenter.
+// Thai, Lao, Khmer and Myanmar (class SA) are AL here. wrap.dart adds the
+// word breaks inside SA text, like pdfme does with Intl.Segmenter.
 
 import 'line_break_classes.dart';
 

@@ -114,3 +114,22 @@ pub fn svg(data: &[u8]) {
         draw::fuzz_svg(path);
     }
 }
+
+/// Text for the word breaks: the bytes as UTF-16 code units (also lone
+/// surrogates), and as UTF-8 when they are valid. The breaks must go up and
+/// stay inside the text.
+pub fn segment(data: &[u8]) {
+    let units: Vec<u16> = data
+        .chunks(2)
+        .map(|c| u16::from_le_bytes([c[0], *c.get(1).unwrap_or(&0)]))
+        .collect();
+    let mut texts = vec![units];
+    if let Ok(s) = std::str::from_utf8(data) {
+        texts.push(s.encode_utf16().collect());
+    }
+    for text in texts {
+        let b = crate::segment::dictionary_breaks(&text);
+        assert!(b.windows(2).all(|w| w[0] < w[1]), "breaks go up: {b:?}");
+        assert!(b.iter().all(|&x| x > 0 && x < text.len()), "breaks inside: {b:?}");
+    }
+}

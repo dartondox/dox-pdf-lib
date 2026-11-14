@@ -2,7 +2,7 @@ name: Fuzz
 
 # Runs each fuzz target in packages/dox-pdf-lib/native/fuzz for 60 s: random bytes into the
 # code that reads what the user gives (PDF files, fonts, images, SVG
-# paths). A crash, a hang or a big allocation fails the run and
+# paths, text for word breaks). A crash, a hang or a big allocation fails the run and
 # uploads the input that caused it.
 
 on:
@@ -31,6 +31,7 @@ jobs:
           - { target: font, max_len: 100000 }
           - { target: image, max_len: 8192 }
           - { target: svg, max_len: 8192 }
+          - { target: segment, max_len: 4096 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -181,6 +181,19 @@ Right-to-left text with numbers or English words follows the Unicode rules, like
 These languages are tested, with full and subset fonts:
 English, German, Vietnamese, Japanese, Chinese, Korean, Thai, Myanmar, Khmer, Arabic, Hebrew and Hindi.
 
+### Word breaks in Thai, Lao, Khmer and Myanmar
+
+These scripts have no spaces between words. To wrap such text yourself, you need the places where a word ends. `dictionaryWordBreaks` gives them. It is an extra: pdf-lib does not have it.
+
+```dart
+List<int> breaks = dictionaryWordBreaks('ทุกสองสัปดาห์'); // [3, 6]
+```
+
+- The result is a sorted list of indexes into the string (UTF-16, like `String.substring`). A word starts at each index.
+- The words come from the ICU word lists, with the same rules as ICU. So the breaks are the same as `Intl.Segmenter` with `granularity: 'word'` in Node.js 24 and in browsers.
+- Each run of Thai, Lao, Khmer or Myanmar letters is cut into words. The start and the end of a run are not in the list. Other text (spaces, numbers, Latin, Chinese, ...) gives no breaks.
+- The word lists make the native library about 1 MB bigger. They load the first time you call the function.
+
 ### Forms
 
 Fill a form:
@@ -364,7 +377,9 @@ Every PDF call then throws an `ArgumentError` that starts with `Couldn't resolve
 ## Thanks
 
 The API comes from [pdf-lib](https://github.com/Hopding/pdf-lib) by Andrew Dillon.
-The native core uses [lopdf](https://crates.io/crates/lopdf), [harfrust](https://crates.io/crates/harfrust), [read-fonts](https://crates.io/crates/read-fonts), [subsetter](https://crates.io/crates/subsetter), [png](https://crates.io/crates/png), [flate2](https://crates.io/crates/flate2) and [unicode-bidi](https://crates.io/crates/unicode-bidi).
+The native core uses [lopdf](https://crates.io/crates/lopdf), [harfrust](https://crates.io/crates/harfrust), [read-fonts](https://crates.io/crates/read-fonts), [subsetter](https://crates.io/crates/subsetter), [png](https://crates.io/crates/png), [flate2](https://crates.io/crates/flate2), [unicode-bidi](https://crates.io/crates/unicode-bidi) and [icu_segmenter](https://crates.io/crates/icu_segmenter) (its word lists of Thai, Lao, Khmer and Myanmar). The word break rules are a port of the ICU4C dictionary break engines (Unicode License V3).
+
+The native library contains code and data of these and other Rust crates. Their licenses and copyright notices are in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). It is also attached to each GitHub release, next to the libraries.
 
 ## License
 

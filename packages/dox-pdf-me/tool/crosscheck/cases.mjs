@@ -9,9 +9,16 @@
 // - 'reencoded': images with an EXIF orientation. pdfme decodes, turns and
 //   encodes them again (JPEG quality 90); we turn them with a transform. The
 //   colors near the edges of the blocks differ a little.
+// - 'lines': Thai, Lao, Khmer and Myanmar text. Every line must have the
+//   same base letters at the same place (test/crosscheck_test.dart reads
+//   them with pdftotext). The letters are shaped by other code (fontkit in
+//   pdfme, HarfBuzz rules here): marks sit in other places, and fontkit
+//   does not reorder some Myanmar vowels. So more pixels may differ.
 // - 'matrix': 2D codes (QR, Data Matrix, PDF417). The modules can differ
 //   (mask, encoding), so only the symbol box is compared, and the codes are
 //   decoded with zbarimg when it is installed.
+
+import { saSentences } from './sa_text.mjs';
 
 const blank = (staticSchema) => ({
   width: 150,
@@ -38,6 +45,9 @@ const fonts = {
   Lato: { data: { $file: 'Lato-Regular.ttf' } },
   NotoSansJP: { data: { $file: 'NotoSansJP-Regular.otf' } },
   NotoSansThai: { data: { $file: 'NotoSansThai-Regular.ttf' } },
+  NotoSansLao: { data: { $file: 'NotoSansLao-Regular.ttf' } },
+  NotoSansKhmer: { data: { $file: 'NotoSansKhmer-Regular.ttf' } },
+  NotoSansMyanmar: { data: { $file: 'NotoSansMyanmar-Regular.ttf' } },
 };
 
 /** One page of schemas, with the input of each schema named in `values`. */
@@ -282,6 +292,32 @@ const empty = (() => {
   };
 })();
 
+// Thai, Lao, Khmer and Myanmar paragraphs in narrow boxes: the lines must
+// break between the same words as pdfme (Intl.Segmenter word dictionaries).
+const saBoxes = (font, fontSize) => [
+  box('text', 5, 5, 30, 90, { fontName: font, fontSize }),
+  box('text', 40, 5, 22, 90, { fontName: font, fontSize, alignment: 'center' }),
+  box('text', 67, 5, 38, 42, { fontName: font, fontSize: fontSize + 2, alignment: 'right' }),
+  box('text', 67, 52, 38, 43, { fontName: font, dynamicFontSize: { min: 6, max: 30, fit: 'vertical' } }),
+  box('text', 110, 5, 35, 42, { fontName: font, dynamicFontSize: { min: 5, max: 20, fit: 'horizontal' } }),
+  box('text', 110, 52, 35, 43, { fontName: font, fontSize, lineHeight: 1.4, characterSpacing: 0.3 }),
+];
+const saCase = (name, font, fontSize, sentences, boxes = saBoxes(font, fontSize)) =>
+  single(name, boxes, [
+    sentences.join(' '),
+    sentences.slice(2, 9).join(''),
+    sentences.slice(0, 4).join(''),
+    sentences.slice(4, 7).join(''),
+    sentences[2],
+    sentences.join(' '),
+  ], { compare: 'lines', options: { font: fonts } });
+// Only sentences the Noto font can draw: the fonts have no Latin letters
+// and digits (missing letters are drawn differently, see README). And
+// pdfme's fontkit throws on some Khmer words with Noto Sans Khmer (eg.
+// ខ្ញុំ, ភ្នំ, ម៉ោង: a GPOS anchor is null), so those are left out too.
+const drawable = (language) =>
+  saSentences[language].filter((s) => !/[0-9A-Za-z,]|ខ្ញុំ|ភ្នំ|ម៉ោង/.test(s));
+
 const japanese = 'こんにちは、世界。日本語のテキストを折り返します（括弧）。これは長い文です。';
 const thai = 'สวัสดีครับ ภาษาไทย';
 
@@ -319,6 +355,13 @@ export const cases = [
     thai,
     `${japanese}\n${latin}`,
   ], { options: { font: fonts } }),
+  saCase('text-thai', 'NotoSansThai', 11, drawable('thai')),
+  saCase('text-lao', 'NotoSansLao', 11, drawable('lao')),
+  saCase('text-khmer', 'NotoSansKhmer', 10, drawable('khmer')),
+  // Myanmar: fontkit (pdfme) and HarfBuzz give other widths for some
+// clusters, so a vertical fit picks another size. That box has a fixed size.
+  saCase('text-myanmar', 'NotoSansMyanmar', 9, drawable('myanmar'),
+    saBoxes('NotoSansMyanmar', 9).map((b, i) => (i === 3 ? { ...b, dynamicFontSize: undefined, fontSize: 12 } : b))),
   single('shapes', shapes, []),
   single('image', images, [png, jpg, png, jpg, png, jpg, png]),
   single('image-orientation', oriented, [
