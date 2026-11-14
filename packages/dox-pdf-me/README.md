@@ -13,6 +13,10 @@ makes PDFs that look the same.
 It is built on [dox_pdf_lib](https://pub.dev/packages/dox_pdf_lib), our Dart
 port of pdf-lib.
 
+> **Not stable yet.** This package is new and still at version 0.0.x. Its API
+> can change between versions, with small breaking changes. Pin the exact
+> version in your `pubspec.yaml`, and read the CHANGELOG before you update.
+
 ## Install
 
 ```bash
