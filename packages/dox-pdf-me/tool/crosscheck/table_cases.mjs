@@ -284,4 +284,81 @@ const edge = (() => {
   };
 })();
 
-export const tableCases = [small, styled, long, longNoRepeat, onBasePdf, scripts, edge];
+// Image cells: `columnStyles.cellType` "image". The head of an image
+// column stays text. `fixed` rows are imageHeight (20 by default), also
+// for an empty or broken image; `auto` rows follow the image ratio.
+const png = { $file: 'image.png', prefix: 'data:image/png;base64,' };
+const jpg = { $file: 'image.jpg', prefix: 'data:image/jpeg;base64,' };
+const turned = { $file: 'image-o6.jpg', prefix: 'data:image/jpeg;base64,' };
+const imageStyles = {
+  headStyles: cellStyle({ fontSize: 9, backgroundColor: '#b39ddb', padding: { top: 1, right: 1, bottom: 1, left: 1 } }),
+  bodyStyles: cellStyle({ fontSize: 9, alternateBackgroundColor: '#f5f5f5', padding: { top: 2, right: 3, bottom: 1, left: 2 } }),
+};
+
+const images = {
+  name: 'table-images',
+  compare: 'pixels',
+  template: {
+    basePdf: blank({ padding: [5, 5, 5, 5] }),
+    schemas: [[
+      table('fixed', 5, 5, 85, 20, {
+        head: ['Photo', 'Name', 'Auto'],
+        headWidthPercentages: [35, 30, 35],
+        ...imageStyles,
+        columnStyles: {
+          cellType: { 0: 'image', 2: 'image' },
+          imageHeightMode: { 2: 'auto' },
+          imageHeight: { 0: 12 },
+          alignment: { 0: 'center', 2: 'right' },
+          verticalAlignment: { 0: 'top', 2: 'bottom' },
+        },
+      }),
+      table('defaults', 95, 5, 50, 20, {
+        head: ['Image', 'Text'],
+        headWidthPercentages: [50, 50],
+        ...imageStyles,
+        columnStyles: { cellType: { 0: 'image', 1: 'text' } },
+      }),
+    ]],
+  },
+  inputs: [{
+    // mixed rows: images, an empty cell, a broken image, a GIF data URL
+    fixed: [
+      [png, 'PNG', jpg],
+      [jpg, 'JPEG', png],
+      ['', 'empty', ''],
+      ['data:image/png;base64,iVBORw0KGgo=', 'broken', 'data:image/gif;base64,R0lGODlhAQABAAAAACw='],
+      [turned, 'EXIF 6', turned],
+    ],
+    defaults: [[png, 'default 20 mm'], ['not an image', 'text value']],
+  }],
+  boxes: [[{ x: 5, y: 5, width: 85, height: 90 }, { x: 95, y: 5, width: 50, height: 90 }]],
+};
+
+// A long table with image rows goes on over pages; auto images on a
+// blank page are capped to fit one page below the head.
+const longImages = (() => {
+  const rows = Array.from({ length: 9 }, (_, i) => [i % 2 ? jpg : png, `Row ${i + 1}`, i === 4 ? turned : '']);
+  return {
+    name: 'table-images-long',
+    compare: 'pixels',
+    template: {
+      basePdf: blank(),
+      schemas: [[
+        { name: 'title', type: 'text', position: { x: 10, y: 10 }, width: 130, height: 8, fontSize: 12 },
+        table('rows', 10, 20, 130, 20, {
+          repeatHead: true,
+          head: ['Image', 'Text', 'Tall auto'],
+          headWidthPercentages: [30, 30, 40],
+          ...imageStyles,
+          columnStyles: { cellType: { 0: 'image', 2: 'image' }, imageHeightMode: { 2: 'auto' }, imageHeight: { 0: 15 } },
+        }),
+        { name: 'after', type: 'text', position: { x: 10, y: 45 }, width: 130, height: 8, fontSize: 10, backgroundColor: '#fff59d' },
+      ]],
+    },
+    inputs: [{ title: 'Images over pages', rows, after: 'Below the image table' }],
+    boxes: [],
+  };
+})();
+
+export const tableCases = [small, styled, long, longNoRepeat, onBasePdf, scripts, edge, images, longImages];

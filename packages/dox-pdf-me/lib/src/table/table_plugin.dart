@@ -1,8 +1,10 @@
 import '../plugin.dart';
 import '../schema.dart';
+import '../schemas/image_plugin.dart';
 import '../schemas/shape_plugins.dart';
 import '../text/text_box.dart';
 import '../text/text_plugin.dart';
+import 'table_image.dart';
 import 'table_layout.dart';
 
 /// The `table` schema type, like pdfme's table plugin.
@@ -11,7 +13,8 @@ import 'table_layout.dart';
 /// `head`, `showHead`, `repeatHead`, `headWidthPercentages`, `tableStyles`
 /// (`borderColor`, `borderWidth`), `headStyles`, `bodyStyles` (with
 /// `alternateBackgroundColor`) and `columnStyles` (`alignment`,
-/// `verticalAlignment`). A cell style has `fontName`, `fontSize`,
+/// `verticalAlignment`, and for image columns `cellType: "image"`,
+/// `imageHeightMode` (`fixed` or `auto`) and `imageHeight`). A cell style has `fontName`, `fontSize`,
 /// `characterSpacing`, `alignment`, `verticalAlignment`, `lineHeight`,
 /// `fontColor`, `borderColor`, `backgroundColor`, `borderWidth` and
 /// `padding` (per side, mm).
@@ -28,6 +31,7 @@ class TablePlugin extends SchemaPlugin {
   static const TextPlugin _text = TextPlugin();
   static const LinePlugin _line = LinePlugin();
   static const ShapePlugin _rectangle = ShapePlugin.rectangle();
+  static const ImagePlugin _image = ImagePlugin();
 
   @override
   Future<void> pdf(RenderProps props) async {
@@ -36,7 +40,12 @@ class TablePlugin extends SchemaPlugin {
       parseTableBody(props.value),
       schema,
     );
-    TableLayout table = await TableLayout.create(schema, body, props.fonts);
+    TableLayout table = await TableLayout.create(
+      schema,
+      body,
+      props.fonts,
+      props.basePdf,
+    );
     double x0 = schema.x;
     double y = schema.y;
     for (TableRow row in <TableRow>[
@@ -128,14 +137,46 @@ class TablePlugin extends SchemaPlugin {
     double left = border.left + padding.left;
     double top = border.top + padding.top;
     double clamp(double v) => v < 0 ? 0 : v;
+    double contentWidth = clamp(width - left - border.right - padding.right);
+    double contentHeight = clamp(height - top - border.bottom - padding.bottom);
+    if (cell.image) {
+      // pdfme: an empty value or a value that is not a PNG or JPEG data
+      // URL draws no image; an image that fails to embed is skipped
+      if (cell.raw.isEmpty || tableImageSize(cell.raw) == null) return;
+      try {
+        await _image.pdf(
+          props.copyWith(
+            value: cell.raw,
+            schema: Schema(<String, dynamic>{
+              'name': '',
+              'type': 'image',
+              'content': cell.raw,
+              'position': <String, double>{'x': x + left, 'y': y + top},
+              'width': contentWidth,
+              'height': contentHeight,
+              'rotate': 0,
+              'opacity': 1,
+              'objectFit': 'contain',
+              'objectPosition': tableImageObjectPosition(
+                style['alignment'] as String?,
+                style['verticalAlignment'] as String?,
+              ),
+            }),
+          ),
+        );
+      } on Object {
+        // ponytail: pdfme warns once on the console; nothing to draw
+      }
+      return;
+    }
     await _text.pdf(
       props.copyWith(
         value: cell.raw,
         schema: box(
           x + left,
           y + top,
-          clamp(width - left - border.right - padding.right),
-          clamp(height - top - border.bottom - padding.bottom),
+          contentWidth,
+          contentHeight,
           <String, dynamic>{
             'type': 'text',
             'backgroundColor': '',

@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dox_pdf_me/dox_pdf_me.dart';
 import 'package:dox_pdf_me/src/dynamic_template.dart';
+import 'package:dox_pdf_me/src/table/table_image.dart';
 import 'package:dox_pdf_me/src/table/table_layout.dart';
 import 'package:test/test.dart';
 
@@ -63,15 +65,20 @@ const Map<String, dynamic> blank = <String, dynamic>{
   'padding': <num>[10, 10, 10, 10],
 };
 
-Future<List<double>> heights(Schema s, String body) async {
+Future<List<double>> heights(
+  Schema s,
+  String body, [
+  Map<String, dynamic> basePdf = blank,
+]) async {
   PDFDocument doc = await PDFDocument.create();
   try {
     TableLayout t = await TableLayout.create(
       s,
       parseTableBody(body),
       FontStore(doc, null),
+      basePdf,
     );
-    return t.dynamicHeights(blank);
+    return t.dynamicHeights(basePdf);
   } finally {
     doc.dispose();
   }
@@ -168,6 +175,74 @@ void main() {
       );
     });
 
+    group('image cells', () {
+      String png =
+          'data:image/png;base64,'
+          '${base64.encode(File('test/fixtures/crosscheck/image.png').readAsBytesSync())}';
+      Schema s = table(<String, dynamic>{
+        'columnStyles': <String, dynamic>{
+          'cellType': <String, String>{'0': 'image', '2': 'image'},
+          'imageHeightMode': <String, String>{'2': 'auto'},
+          'imageHeight': <String, num>{'0': 12},
+        },
+      });
+      String rows = jsonEncode(<List<String>>[
+        <String>[png, 'a', png],
+        <String>['', 'b', ''],
+        <String>['bad', 'c', 'data:image/png;base64,AAAA'],
+      ]);
+
+      test('fixed, auto, empty and broken images', () async {
+        expectClose(await heights(s, rows), <double>[
+          14.5864,
+          38.066666666666666,
+          22.2,
+          22.2,
+        ]);
+      });
+
+      test('auto images fit on one page below the head', () async {
+        expectClose(
+          await heights(s, rows, <String, dynamic>{
+            'width': 150,
+            'height': 40,
+            'padding': <num>[5, 5, 5, 5],
+          }),
+          <double>[14.5864, 22.2, 22.2, 22.2],
+        );
+      });
+
+      test('object position from the cell alignment', () {
+        expect(tableImageObjectPosition('right', 'top'), 'right top');
+        expect(tableImageObjectPosition('justify', null), 'left center');
+      });
+    });
+
+    test('a row with fewer cells than the head throws, like pdfme', () {
+      expect(
+        heights(table(), '[["a", "b"]]'),
+        throwsA(
+          isA<ArgumentError>().having(
+            (ArgumentError e) => e.message,
+            'message',
+            "Cannot read properties of undefined (reading 'split')",
+          ),
+        ),
+      );
+    });
+
+    test('a column without a width throws', () {
+      expect(
+        heights(
+          table(<String, dynamic>{
+            'headWidthPercentages': <num>[30, 30],
+          }),
+          '[]',
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('column widths come from headWidthPercentages', () async {
       PDFDocument doc = await PDFDocument.create();
       try {
@@ -175,6 +250,7 @@ void main() {
           table(),
           const <List<String>>[],
           FontStore(doc, null),
+          blank,
         );
         expectClose(t.columnWidths, <double>[39, 39, 52]);
       } finally {

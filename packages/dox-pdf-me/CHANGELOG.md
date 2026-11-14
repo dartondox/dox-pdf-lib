@@ -7,6 +7,12 @@
   box pushes the schemas below it down and goes on over new pages. The
   head can repeat on each page (`repeatHead`). On a PDF base the table
   draws its full height and makes no new pages, like pdfme.
+- Table image columns (`columnStyles.cellType: "image"`): PNG and JPEG
+  data URLs in the cells, with `imageHeightMode` (`fixed`, `auto`) and
+  `imageHeight`, like pdfme.
+- A table row with fewer cells than the head throws, like pdfme. A
+  column without a width in `headWidthPercentages` throws a clear error
+  (pdfme fails on it too).
 - PDF417 has the same modules as in pdfme. The `barcode` package picked
   other columns, rows and codewords, so the code was wider and lower than
   in pdfme and did not fill a box made for it. Now a port of the bwip-js

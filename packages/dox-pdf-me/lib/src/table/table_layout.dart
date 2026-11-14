@@ -6,8 +6,10 @@ import '../dynamic_template.dart';
 import '../expression.dart';
 import '../fonts/font_store.dart';
 import '../schema.dart';
+import '../template.dart';
 import '../text/text_box.dart';
 import '../text/text_measure.dart';
+import 'table_image.dart';
 
 /// The `__splitRange` unit of a table part, like pdfme's `tableBody`.
 const String tableBodyUnit = 'tableBody';
@@ -16,14 +18,19 @@ const String tableBodyUnit = 'tableBody';
 /// of a pdfme cell schema (`fontName`, `fontSize`, `fontColor`,
 /// `borderColor`, `borderWidth`, `padding`, ...).
 class TableCell {
-  TableCell(this.raw, this.style);
+  TableCell(this.raw, this.style, {this.image = false});
 
   final String raw;
   final Map<String, dynamic> style;
 
+  /// A body cell of an image column (`columnStyles.cellType: "image"`).
+  /// [raw] is a PNG or JPEG data URL.
+  final bool image;
+
   double width = 0;
 
-  /// The height of the text plus the padding and the border, in mm.
+  /// The height of the text (or image) plus the padding and the border,
+  /// in mm.
   double contentHeight = 0;
 }
 
@@ -49,11 +56,13 @@ class TableLayout {
   });
 
   /// pdfme's `createSingleTable`. [body] is the part of the body this
-  /// schema draws (see [tableBodyRange]).
+  /// schema draws (see [tableBodyRange]). [basePdf] is the `basePdf` of
+  /// the template (a blank page limits the height of `auto` images).
   static Future<TableLayout> create(
     Schema schema,
     List<List<String>> body,
     FontStore fonts,
+    Object? basePdf,
   ) async {
     int start = tableBodyRange(schema)?.start ?? 0;
     Map<String, dynamic> bodyStyles = _map(schema['bodyStyles']);
@@ -83,38 +92,58 @@ class TableLayout {
         ? headRow.length
         : (body.isEmpty ? 0 : body.first.length);
     List<double> columnWidths = _columnWidths(schema, columnCount);
-    Map<int, String> alignments = _columnMap(schema, 'alignment');
-    Map<int, String> verticalAlignments = _columnMap(
+    Map<int, Object?> alignments = _columnMap(schema, 'alignment');
+    Map<int, Object?> verticalAlignments = _columnMap(
       schema,
       'verticalAlignment',
     );
+    // pdfme's normalizeTableCellType: a set value that is not `text` or
+    // `image` is `text`
+    Map<int, Object?> cellTypes = _columnMap(schema, 'cellType');
+    Map<int, Object?> imageModes = _columnMap(schema, 'imageHeightMode');
+    Map<int, Object?> imageHeights = _columnMap(schema, 'imageHeight');
 
-    TableRow row(List<String> raw, Map<String, dynamic> section, bool even) =>
-        TableRow(<TableCell>[
-          for (int c = 0; c < columnCount; c++)
-            TableCell(c < raw.length ? raw[c] : '', <String, dynamic>{
-              ..._defaultStyle(fonts.fallbackName),
-              ..._sectionStyle(section),
-              // pdfme: even body rows (0, 2, ...) take the alternate
-              // color, also when it is not set
-              if (even) 'backgroundColor': alternate,
-              if (alignments[c] case String a) 'alignment': a,
-              if (verticalAlignments[c] case String v) 'verticalAlignment': v,
-            })..width = columnWidths[c],
-        ]);
+    TableRow row(
+      List<String> raw,
+      Map<String, dynamic> section, {
+      bool body = false,
+      bool even = false,
+    }) {
+      if (raw.length < columnCount) {
+        // pdfme reads the missing cell as undefined and fails on it
+        throw ArgumentError(
+          "Cannot read properties of undefined (reading 'split')",
+        );
+      }
+      return TableRow(<TableCell>[
+        for (int c = 0; c < columnCount; c++)
+          TableCell(raw[c], <String, dynamic>{
+            ..._defaultStyle(fonts.fallbackName),
+            ..._sectionStyle(section),
+            // pdfme: even body rows (0, 2, ...) take the alternate
+            // color, also when it is not set
+            if (even) 'backgroundColor': alternate,
+            if (alignments[c] case String a) 'alignment': a,
+            if (verticalAlignments[c] case String v) 'verticalAlignment': v,
+            if (imageModes[c] case String m when m == 'fixed' || m == 'auto')
+              'imageHeightMode': m,
+            if (imageHeights[c] case num h when h.isFinite) 'imageHeight': h,
+          }, image: body && cellTypes[c] == 'image')..width = columnWidths[c],
+      ]);
+    }
 
     Map<String, dynamic> headStyles = _map(schema['headStyles']);
     TableLayout table = TableLayout._(
       schema: schema,
       columnWidths: columnWidths,
-      head: <TableRow>[row(headRow, headStyles, false)],
+      head: <TableRow>[row(headRow, headStyles)],
       body: <TableRow>[
         for (int r = 0; r < body.length; r++)
-          row(body[r], bodyStyles, r.isEven),
+          row(body[r], bodyStyles, body: true, even: r.isEven),
       ],
       showHead: showHead,
     );
-    await table._fitContent(fonts);
+    await table._fitContent(fonts, basePdf);
     return table;
   }
 
@@ -142,17 +171,13 @@ class TableLayout {
 
   /// pdfme's `fitContent`: wraps the text of each cell and sets the row
   /// heights. A cell is `lines * fontSize * lineHeight` plus the padding
-  /// and the border.
-  Future<void> _fitContent(FontStore fonts) async {
+  /// and the border. An image cell is its image height (see
+  /// [tableImageContentHeight]) plus the padding and the border.
+  Future<void> _fitContent(FontStore fonts, Object? basePdf) async {
     Map<String, TextMeasure> measures = <String, TextMeasure>{};
     for (TableRow row in allRows) {
       for (TableCell cell in row.cells) {
         Schema s = Schema(cell.style);
-        String fontName = fonts.resolve(s.string('fontName'));
-        TextMeasure measure = measures[fontName] ??= TextMeasure(
-          await fonts.embed(fontName),
-          fonts.metrics(fontName),
-        );
         BoxSides border = BoxSides.fromJson(s['borderWidth']);
         BoxSides padding = BoxSides.fromJson(s['padding']);
         double contentWidth = math.max(
@@ -163,6 +188,28 @@ class TableLayout {
               padding.left -
               padding.right,
         );
+        double vertical =
+            border.top + border.bottom + padding.top + padding.bottom;
+        if (cell.image) {
+          double height = tableImageContentHeight(
+            value: cell.raw,
+            mode: s.string('imageHeightMode'),
+            imageHeight: s.number('imageHeight'),
+            contentWidth: contentWidth,
+          );
+          if (s.string('imageHeightMode') == 'auto') {
+            double? limit = _autoImageLimit(basePdf, vertical);
+            if (limit != null) height = math.min(height, math.max(0, limit));
+          }
+          cell.contentHeight = height + vertical;
+          if (cell.contentHeight > row.height) row.height = cell.contentHeight;
+          continue;
+        }
+        String fontName = fonts.resolve(s.string('fontName'));
+        TextMeasure measure = measures[fontName] ??= TextMeasure(
+          await fonts.embed(fontName),
+          fonts.metrics(fontName),
+        );
         double fontSize = s.number('fontSize') ?? 0;
         int lines = measure
             .wrap(
@@ -172,14 +219,30 @@ class TableLayout {
               mm2pt(contentWidth),
             )
             .length;
-        double vertical =
-            border.top + border.bottom + padding.top + padding.bottom;
         cell.contentHeight =
             lines * pt2mm(fontSize) * (s.number('lineHeight') ?? 0) + vertical;
         if (cell.contentHeight > row.height) row.height = cell.contentHeight;
       }
     }
   }
+
+  /// pdfme's `autoImageHeightLimit`: an `auto` image fits on one page
+  /// below the head. Null for a PDF base (it gets no new pages).
+  double? _autoImageLimit(Object? basePdf, double vertical) {
+    if (!_isBlank(basePdf)) return null;
+    Map<dynamic, dynamic> b = basePdf! as Map<dynamic, dynamic>;
+    List<dynamic> padding = b['padding'] as List<dynamic>;
+    double pageContentHeight =
+        ((b['height'] as num) - (padding[0] as num) - (padding[2] as num))
+            .toDouble();
+    // the head rows are measured first; the limit uses the template
+    // showHead, also for a part that does not draw the head
+    double head = schema['showHead'] != false ? headHeight : 0.0;
+    return pageContentHeight - head - vertical - tableImageAutoSafetyMargin;
+  }
+
+  static bool _isBlank(Object? basePdf) =>
+      Template(basePdf: basePdf, schemas: const <List<Schema>>[]).isBlank;
 
   /// pdfme's `getDynamicHeightsForTable`: the height of each unit of the
   /// table for the page layout. Unit 0 is the head (0 when `showHead` is
@@ -191,13 +254,16 @@ class TableLayout {
         ? <double>[for (TableRow r in allRows) r.height]
         : <double>[0, for (TableRow r in body) r.height];
     double headerHeight = templateShowHead ? headHeight : 0;
-    if (schema['repeatHead'] != true || basePdf is! Map || headerHeight <= 0) {
+    if (schema['repeatHead'] != true ||
+        !_isBlank(basePdf) ||
+        headerHeight <= 0) {
       return base;
     }
-    List<dynamic> padding = basePdf['padding'] as List<dynamic>;
+    Map<dynamic, dynamic> b = basePdf! as Map<dynamic, dynamic>;
+    List<dynamic> padding = b['padding'] as List<dynamic>;
     double paddingTop = (padding[0] as num).toDouble();
     double pageContentHeight =
-        (basePdf['height'] as num) - paddingTop - (padding[2] as num);
+        (b['height'] as num) - paddingTop - (padding[2] as num);
     double pageStartY(int index) => index * pageContentHeight + paddingTop;
 
     int initialPage = math.max(
@@ -317,33 +383,30 @@ class TableLayout {
     'left': v,
   };
 
-  /// `width * headWidthPercentages[i] / 100`. pdfme gives no width (NaN)
-  /// to a column without a percentage; here those columns share the rest
-  /// of the table width.
+  /// `width * headWidthPercentages[i] / 100`. pdfme gives a column
+  /// without a percentage no width (NaN), and pdf-lib then fails on it.
+  /// This port throws a clear error instead.
   static List<double> _columnWidths(Schema schema, int count) {
     Object? json = schema['headWidthPercentages'];
-    List<double?> widths = <double?>[
+    return <double>[
       for (int i = 0; i < count; i++)
         if (json is List && i < json.length && json[i] is num)
           schema.width * (json[i] as num) / 100
         else
-          null,
+          throw ArgumentError(
+            '[@pdfme/schemas/table] headWidthPercentages has no width for '
+            'column $i of table "${schema.name}"',
+          ),
     ];
-    int missing = widths.where((double? w) => w == null).length;
-    if (missing == 0) return widths.cast<double>();
-    double used = widths.fold(0, (double sum, double? w) => sum + (w ?? 0));
-    double share = math.max(0, schema.width - used) / missing;
-    return <double>[for (double? w in widths) w ?? share];
   }
 
   /// A `columnStyles` map like `{"alignment": {"0": "right"}}`.
-  static Map<int, String> _columnMap(Schema schema, String key) {
+  static Map<int, Object?> _columnMap(Schema schema, String key) {
     Object? map = _map(schema['columnStyles'])[key];
-    return <int, String>{
+    return <int, Object?>{
       if (map is Map)
         for (MapEntry<dynamic, dynamic> e in map.entries)
-          if (int.tryParse('${e.key}') case int i when e.value is String)
-            i: e.value as String,
+          if (int.tryParse('${e.key}') case int i) i: e.value,
     };
   }
 
@@ -367,6 +430,7 @@ Future<DynamicLayout> tableDynamicLayout(
     schema,
     parseTableBody(value),
     fonts,
+    basePdf,
   );
   return DynamicLayout(
     table.dynamicHeights(basePdf),

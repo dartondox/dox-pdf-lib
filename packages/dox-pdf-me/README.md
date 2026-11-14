@@ -176,6 +176,14 @@ styles; `bodyStyles` also has `alternateBackgroundColor`) and
 style has the text props plus `borderWidth` and `padding` per side. A
 read-only table uses its input when there is one, else its `content`.
 
+A column with `columnStyles.cellType` `"image"` shows PNG and JPEG data
+URLs, fitted in the cell (`contain`, placed by the cell alignment). The
+head of the column stays text. `imageHeightMode` `fixed` (default) makes
+the image `imageHeight` mm high (20 by default), also when the cell is
+empty or not an image; `auto` follows the image ratio and fits on one
+page. Like pdfme, an empty cell or a value that is not a PNG or JPEG
+data URL draws no image.
+
 On a blank base PDF, a table that is taller than its box grows. The
 schemas below it move down, and the table goes on over new pages (pdfme's
 dynamic layout). On a PDF base, the table draws its full height on the
@@ -244,11 +252,12 @@ This list compares with pdfme 6.2.8.
   like `{name}`, `{order.id}`, `{currentPage}`, `{totalPages}`, `{date}` and
   `{dateTime}`. pdfme also runs JavaScript expressions, like `{price * 2}`.
   Those stay as they are.
-- **Tables:** image cells (`columnStyles.cellType: "image"`) are not
-  supported yet; the cell shows the value as text. A column without a
-  width in `headWidthPercentages` gets a share of the rest of the table
-  width (pdfme gives it no width). A row with fewer cells than the head
-  gets empty cells (pdfme throws).
+- **Tables:** a column without a width in `headWidthPercentages` throws
+  an error. pdfme gives that column no width (NaN): pdf-lib then throws
+  when it draws the column, or the column comes out broken when nothing
+  is drawn in it. A row with fewer cells than the head throws, like pdfme
+  (`Cannot read properties of undefined (reading 'split')`). Number cells
+  work (pdfme throws `raw.split is not a function` on a blank base PDF).
 - **Not supported yet:** `overflow: "expand"` (the text box does not grow,
   and it does not move other schemas), `list`, inline markdown text,
   `multiVariableText`, font URLs, base PDFs
