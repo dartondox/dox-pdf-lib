@@ -10,12 +10,10 @@ resolution: workspace
 dependencies:
   barcode: ^2.2.9
   characters: ^1.4.1
-  # In this workspace. Not ^0.0.1: in 0.0.x that means <0.0.2, so the next
-  # dox_pdf_lib release would break `dart pub get` here.
-  # Needs dictionaryWordBreaks, new in dox_pdf_lib 0.0.2. Raise the floor to
-  # 0.0.2 together with the version of dox_pdf_lib (a workspace can not
-  # resolve a floor above the local version).
-  dox_pdf_lib: '>=0.0.1 <0.1.0'
+  # Needs dictionaryWordBreaks, new in dox_pdf_lib 0.0.2. Not ^0.0.2: in
+  # 0.0.x that means <0.0.3, so the next dox_pdf_lib release would break
+  # `dart pub get` in this workspace.
+  dox_pdf_lib: '>=0.0.2 <0.1.0'
   xml: ^7.1.0
 
 dev_dependencies:

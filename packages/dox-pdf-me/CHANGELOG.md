@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.1
 
 - First version: `generate(template, inputs, options, plugins)`, a Dart port
   of the pdfme generator (pdfme 6.2.8). It reads pdfme template JSON.
