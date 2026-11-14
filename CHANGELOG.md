@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.1
 
 - First version. The core of the pdf-lib API, with a Rust core (lopdf):
   - `PDFDocument.create`, `load` (with `ignoreEncryption` and `updateMetadata`), `save` (with `useObjectStreams` and `addDefaultPage`), `saveAsBase64`.
