@@ -169,6 +169,10 @@ void main() {
             !a.contains('QR-Code:https://github.com/dartondox/dox-pdf-lib')) {
           failures.add('$name: the first QR code was not decoded: $a');
         }
+        // the exact text must come back
+        for (Object? text in c['decoded'] as List<dynamic>? ?? <dynamic>[]) {
+          if (!a.contains(text)) failures.add('$name: $text not decoded: $a');
+        }
       }
     }
     File('$outDir/report.txt').writeAsStringSync(report.toString());

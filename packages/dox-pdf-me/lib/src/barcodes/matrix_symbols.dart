@@ -1,11 +1,12 @@
-import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:barcode/barcode.dart';
 
 import 'barcode_symbol.dart';
+import 'barcode_validator.dart';
 import 'datamatrix_encoder.dart';
+import 'gs1_process.dart';
 import 'pdf417_encoder.dart';
 import 'qr_encoder.dart';
 
@@ -72,8 +73,12 @@ class MatrixSymbol {
 class MatrixSymbolBuilder {
   const MatrixSymbolBuilder._();
 
-  /// The symbol of [type] for [value], or null when it can not be encoded.
+  /// The symbol of [type] for [value], or null when [value] is empty or
+  /// [type] is not 2D. Throws a [BarcodeInputException] when bwip-js would
+  /// throw.
   static MatrixSymbol? build(String type, String value) {
+    if (value.isEmpty) return null;
+    checkBwipText(value);
     try {
       return switch (type) {
         'qrcode' => qrCode(value),
@@ -87,31 +92,24 @@ class MatrixSymbolBuilder {
   }
 
   /// QR code with our port of the BWIPP encoder, so the modules are the
-  /// same as in bwip-js. Null when the data is too long.
-  static MatrixSymbol? qrCode(String value) {
-    ModuleGrid? grid = QrEncoder.encode(value);
-    return grid == null ? null : MatrixSymbol(grid);
-  }
+  /// same as in bwip-js.
+  static MatrixSymbol qrCode(String value) =>
+      MatrixSymbol(QrEncoder.encode(value));
 
-  /// GS1 Data Matrix: FNC1 first, then the element string without the
-  /// parentheses, and FNC1 after each field of variable length.
-  static MatrixSymbol? gs1DataMatrix(String value) {
-    List<(String, String)>? fields = parseGs1(value);
-    if (fields == null) return null;
+  /// GS1 Data Matrix: FNC1 first, then each AI and its value, and FNC1
+  /// after each value of variable length ([Gs1Process], which also checks
+  /// the data like bwip-js).
+  static MatrixSymbol gs1DataMatrix(String value) {
+    List<Gs1Element> fields = Gs1Process.parse(value);
     List<int> msg = <int>[DataMatrixCodewords.fnc1];
-    for (int i = 0; i < fields.length; i++) {
-      String ai = fields[i].$1;
-      msg.addAll(utf8.encode(ai + fields[i].$2));
-      if (i < fields.length - 1 && !_fixedLength(ai)) {
-        msg.add(DataMatrixCodewords.fnc1);
-      }
+    for (Gs1Element f in fields) {
+      msg.addAll('${f.ai}${f.value}'.codeUnits);
+      if (f.fnc1After) msg.add(DataMatrixCodewords.fnc1);
     }
-    List<int>? cws = DataMatrixCodewords.codewords(msg);
-    if (cws == null) return null;
     return MatrixSymbol(
       readGrid(
         Barcode.dataMatrix().makeBytes(
-          Uint8List.fromList(cws),
+          Uint8List.fromList(DataMatrixCodewords.codewords(msg)),
           width: 1000,
           height: 1000,
         ),
@@ -119,35 +117,11 @@ class MatrixSymbolBuilder {
     );
   }
 
-  /// `(01)123...(10)ABC` as `[('01', '123...'), ('10', 'ABC')]`, or null
-  /// when it is not a GS1 element string.
-  static List<(String, String)>? parseGs1(String value) {
-    List<(String, String)> out = <(String, String)>[];
-    int end = 0;
-    for (RegExpMatch m in _gs1Field.allMatches(value)) {
-      if (m.start != end) return null;
-      out.add((m.group(1)!, m.group(2)!));
-      end = m.end;
-    }
-    return out.isEmpty || end != value.length ? null : out;
-  }
-
-  static final RegExp _gs1Field = RegExp(r'\((\d{2,4})\)([^()]*)');
-
-  /// GS1 application identifiers with a predefined length need no FNC1
-  /// after them.
-  static bool _fixedLength(String ai) => const <String>{
-    '00', '01', '02', '03', '04', '11', '12', '13', '14', '15', '16', //
-    '17', '18', '19', '20', '31', '32', '33', '34', '35', '36', '41',
-  }.contains(ai.substring(0, 2));
-
   /// PDF417 with our port of the BWIPP encoder, so the codewords, the
   /// columns and the rows are the same as in bwip-js. Row height 3
   /// modules. Null when the data is too long.
-  static MatrixSymbol? pdf417(String value) {
-    Pdf417Symbol? symbol = Pdf417Encoder.encode(value);
-    return symbol == null ? null : MatrixSymbol(symbol.grid(), rowHeight: 3);
-  }
+  static MatrixSymbol pdf417(String value) =>
+      MatrixSymbol(Pdf417Encoder.encode(value).grid(), rowHeight: 3);
 
   /// The module grid of 2D barcode [elements] from the `barcode` package.
   /// One module is the narrowest run; one row is the height of a bar.

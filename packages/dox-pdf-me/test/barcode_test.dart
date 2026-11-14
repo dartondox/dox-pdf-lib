@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dox_pdf_lib/dox_pdf_lib.dart';
+import 'package:dox_pdf_me/dox_pdf_me.dart' show builtInPlugins, generate;
 import 'package:dox_pdf_me/src/barcodes/barcode_fit_layout.dart';
 import 'package:dox_pdf_me/src/barcodes/barcode_painter.dart';
 import 'package:dox_pdf_me/src/barcodes/barcode_plugin.dart';
@@ -275,6 +276,48 @@ void main() {
     });
   });
 
+  test('values pdfme accepts but bwip-js does not: the same error', () async {
+    // made with pdfme 6.2.8 (tool/crosscheck/make_barcode_errors.mjs): the
+    // message generate fails with, or null
+    List<dynamic> cases = jsonDecode(
+      File('test/fixtures/barcodes/barcode_errors.json').readAsStringSync(),
+    ) as List<dynamic>;
+    expect(cases, hasLength(75));
+    for (Object? c in cases) {
+      Map<String, dynamic> m = c! as Map<String, dynamic>;
+      String? message;
+      try {
+        await generate(
+          template: <String, dynamic>{
+            'basePdf': <String, dynamic>{
+              'width': 100,
+              'height': 100,
+              'padding': <int>[0, 0, 0, 0],
+            },
+            'schemas': <dynamic>[
+              <dynamic>[
+                <String, dynamic>{
+                  'name': 'a',
+                  'type': m['type'],
+                  'position': <String, dynamic>{'x': 5, 'y': 5},
+                  'width': 50,
+                  'height': 30,
+                },
+              ],
+            ],
+          },
+          inputs: <Map<String, dynamic>>[
+            <String, dynamic>{'a': m['value']},
+          ],
+          plugins: builtInPlugins,
+        );
+      } on BarcodeInputException catch (e) {
+        message = e.message;
+      }
+      expect(message, m['message'], reason: '${m['type']} ${m['value']}');
+    }
+  });
+
   group('2D symbols like bwip-js', () {
     test('qrcode: version by data with level M, no quiet zone', () {
       // bwip-js natural sizes: 210 = 21 modules, 250 = 25 modules
@@ -311,27 +354,20 @@ void main() {
       ) as Map<String, dynamic>;
       expect(golden, hasLength(27));
       golden.forEach((String input, dynamic widths) {
-        expect(Code128Encoder.widths(input)!.join(), widths, reason: input);
+        expect(Code128Encoder.widths(input).join(), widths, reason: input);
       });
     });
     test('gs1datamatrix: every module is the same as bwip-js (26 inputs)', () {
       // C40, Text, X12 and EDIFACT runs and the square size
       _expectGolden('gs1datamatrix', 'gs1datamatrix_bwip.json', 26);
     });
-    test('qrcode: every module is the same as bwip-js (28 inputs)', () {
+    test('qrcode: every module is the same as bwip-js (34 inputs)', () {
       // segments, version, raised error correction level and mask
-      _expectGolden('qrcode', 'qrcode_bwip.json', 28);
+      _expectGolden('qrcode', 'qrcode_bwip.json', 34);
     });
-    test('pdf417: too much data gives null', () {
-      expect(MatrixSymbolBuilder.build('pdf417', '\u0001' * 2000), isNull);
+    test('empty values give null', () {
       expect(MatrixSymbolBuilder.build('pdf417', ''), isNull);
-    });
-    test('gs1datamatrix: element string parsing', () {
-      expect(MatrixSymbolBuilder.parseGs1('(01)123(10)AB'), <(String, String)>[
-        ('01', '123'),
-        ('10', 'AB'),
-      ]);
-      expect(MatrixSymbolBuilder.parseGs1('x(01)123'), isNull);
+      expect(MatrixSymbolBuilder.build('qrcode', ''), isNull);
     });
     test('pdf417: BWIPP columns and rows, row height 3', () {
       // bwip-js natural viewBox / 5 units: (17 * columns + 69) x rows * 3
@@ -477,7 +513,6 @@ void main() {
           <String, dynamic>{'backgroundColor': '#fff'},
         ),
         ('qrcode', '', <String, dynamic>{}),
-        ('nw7', 'a4321D', <String, dynamic>{}),
         ('aztec', 'x', <String, dynamic>{}),
       ]);
       expect(invalid.length, empty.length);

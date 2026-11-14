@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'barcode_validator.dart';
+
 /// The Data Matrix codewords like BWIPP (bwip-js 4.11.4), so a GS1 Data
 /// Matrix is the same as in pdfme: the same ASCII, C40, Text, X12, EDIFACT
 /// and Base 256 runs, and the same square size.
@@ -19,15 +21,10 @@ class DataMatrixCodewords {
   static const int _sft1 = -13, _unl = -10;
 
   /// The data codewords of [msg] (bytes and [fnc1]), padded to fill the
-  /// smallest square symbol; null when it does not fit.
-  static List<int>? codewords(List<int> msg) {
-    if (msg.isEmpty) return null;
-    try {
-      return DataMatrixCodewords._(msg)._encode();
-    } on StateError {
-      return null;
-    }
-  }
+  /// smallest square symbol. Throws a [BarcodeInputException] when it does
+  /// not fit.
+  static List<int> codewords(List<int> msg) =>
+      DataMatrixCodewords._(msg)._encode();
 
   /// Data codewords of the square symbols, 10x10 to 144x144.
   static const List<int> _capacities = <int>[
@@ -50,7 +47,12 @@ class DataMatrixCodewords {
     for (int c in _capacities) {
       if (c > used) return c - used;
     }
-    throw StateError('too much data');
+    // ponytail: bwip-js names the place that found it (#25367 to #25796);
+    // pdfme's 52 character limit never gets here.
+    throw const BarcodeInputException.bwipp(
+      'datamatrixTooMuchData#25367',
+      'The input data exceeds the symbol capacity',
+    );
   }
 
   static bool _isDigit(int c) => c >= 48 && c <= 57;

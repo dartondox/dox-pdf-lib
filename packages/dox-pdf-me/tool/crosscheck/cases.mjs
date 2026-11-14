@@ -805,6 +805,16 @@ const landscape = (() => {
   };
 })();
 
+// Japanese QR codes: bwip-js never uses kanji mode (it sends UTF-8 bytes),
+// so a reader must get the same text back.
+const japaneseQr = ['ありがとうございます', 'お問い合わせはこちらまで', '愛知県名古屋市中区栄', 'こここここ', '東京都千代田区丸の内1-1-1'];
+const qrJapanese = single(
+  'qr-japanese',
+  japaneseQr.map((_, i) => box('qrcode', 5 + (i % 3) * 48, 5 + Math.floor(i / 3) * 48, 40, 40, {})),
+  japaneseQr,
+  { compare: 'matrix', decoded: japaneseQr.map((t) => `QR-Code:${t}`) },
+);
+
 cases.push(
   pages('variant-text', variantText, { options: { font: fonts } }),
   single('variant-shapes', variantShapes, []),
@@ -822,4 +832,5 @@ cases.push(
   single('variant-colors', variantColors, ['3 digit', '4 digit', 'transparent bg', '', '', '', 'true', 'true', '4006381333931', 'Alpha', 'qr', 'pdf', '2024/05/07', 'A', { $file: 'image.png' }, svgSample]),
   a4,
   landscape,
+  qrJapanese,
 );

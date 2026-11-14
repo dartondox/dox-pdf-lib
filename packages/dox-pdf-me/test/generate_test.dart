@@ -319,6 +319,12 @@ void main() {
       expect(f.isValid('undefined'), isFalse);
       expect(f.isValid('yyyy jj'), isFalse);
       expect(f.isValid('DD.MM.YYYY'), isFalse);
+      // 7 S tokens (more than milliseconds) work in date-fns
+      expect(f.isValid('ss.SSSSSSS'), isTrue);
+      expect(
+        f.format(DateTime(2024, 5, 7, 18, 5, 9, 123), 'ss.SSSSSSS'),
+        '09.1230000',
+      );
     });
 
     test('input values', () {

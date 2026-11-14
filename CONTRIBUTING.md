@@ -53,7 +53,10 @@ The paths are in `packages/dox-pdf-me`.
 - Barcodes: the 2D codes and Code 128 are ports of the BWIPP encoders
   (`lib/src/barcodes/`). `test/fixtures/barcodes/*_bwip.json` hold the
   modules bwip-js 4.11.4 makes (with `bwipjs.raw`); `test/barcode_test.dart`
-  compares every module.
+  compares every module. `lib/src/barcodes/gs1_syntax.dart` is made by
+  `node tool/crosscheck/make_gs1_syntax.mjs lib/src/barcodes/gs1_syntax.dart`,
+  and `test/fixtures/barcodes/barcode_errors.json` (the errors pdfme throws)
+  by `node tool/crosscheck/make_barcode_errors.mjs <file>`.
 - Thai, Lao, Khmer and Myanmar word breaks: `test/fixtures/sa_word_breaks.json`
   holds pdfme's breaks for the sentences of `tool/crosscheck/sa_text.mjs`.
   Make it again with `node tool/crosscheck/word_breaks.mjs

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'barcode_validator.dart';
+
 /// Code 128 like BWIPP (bwip-js 4.11.4), so the bars are the same as in
 /// pdfme: the same start code, code set switches, shifts and FNC4.
 ///
@@ -13,12 +15,18 @@ class Code128Encoder {
   static const int _swa = -4, _swb = -5, _swc = -6, _fn4 = -10, _sft = -11;
   static const int _sta = 103, _stb = 104, _stc = 105, _stp = 106;
 
-  /// The widths of the bars and spaces (bar first, stop included), or null
-  /// when BWIPP can not encode [value] (empty or more than 500 bytes).
-  static List<int>? widths(String value) {
+  /// The widths of the bars and spaces (bar first, stop included) of
+  /// [value] (not empty). More than 500 bytes throw a
+  /// [BarcodeInputException], like bwip-js.
+  static List<int> widths(String value) {
     // bwip-js sends text with non-ASCII letters as UTF-8 bytes
     List<int> bytes = utf8.encode(value);
-    if (bytes.isEmpty || bytes.length > 500) return null;
+    if (bytes.length > 500) {
+      throw const BarcodeInputException.bwipp(
+        'code128inputTooLong#9205',
+        'The input data is too long',
+      );
+    }
     List<int> cws = _codewords(_withFnc4(bytes));
     int sum = cws[0];
     for (int i = 1; i < cws.length; i++) {

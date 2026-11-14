@@ -25,8 +25,9 @@ class LinearSymbolBuilder {
   static const double guardExtension = 5;
 
   /// The barcode of [type] for [value] in a box of [widthMm] x [heightMm],
-  /// or null when the value can not be encoded (pdfme would get an error
-  /// from bwip-js; we draw nothing).
+  /// or null when [value] is empty or [type] is not linear. Throws a
+  /// [BarcodeInputException] where bwip-js throws (pdfme's `generate`
+  /// fails then too).
   static BarcodeSymbol? build(
     String type,
     String value, {
@@ -34,6 +35,8 @@ class LinearSymbolBuilder {
     required double heightMm,
     required bool includeText,
   }) {
+    if (value.isEmpty) return null;
+    checkBwipText(value);
     _Layout l = _Layout(widthMm, heightMm / 25.4 * 72, includeText);
     try {
       return switch (type) {
@@ -109,8 +112,7 @@ class LinearSymbolBuilder {
   /// Code 128 with our port of the BWIPP encoder, so the code sets are the
   /// same as in bwip-js.
   static BarcodeSymbol? _code128(_Layout l, String value) {
-    List<int>? widths = Code128Encoder.widths(value);
-    if (widths == null) return null;
+    List<int> widths = Code128Encoder.widths(value);
     List<ModuleRun> runs = <ModuleRun>[];
     int start = 0;
     for (int i = 0; i < widths.length; i++) {
@@ -143,7 +145,12 @@ class LinearSymbolBuilder {
 
   static BarcodeSymbol? _nw7(_Layout l, String value) {
     // BWIPP takes only capital start and stop letters
-    if (value != value.toUpperCase()) return null;
+    if (value != value.toUpperCase()) {
+      throw const BarcodeInputException.bwipp(
+        'rationalizedCodabarBadStartStop#15508',
+        'Codabar start and stop characters must be one of A B C or D',
+      );
+    }
     return l.runs(
       moduleRuns(
         Barcode.codabar(explicitStartStop: true),
@@ -173,8 +180,14 @@ class LinearSymbolBuilder {
 
   /// Japan Post: bars 1.44 wide, 1.872 apart, in four heights.
   static BarcodeSymbol? _japanPost(_Layout l, String value) {
-    List<JapanPostBar>? bars = JapanPostEncoder.encode(value);
-    if (bars == null) return null;
+    // the characters are checked before (validateBarcodeInput), so no bars
+    // means more than 20 characters after encoding
+    List<JapanPostBar> bars =
+        JapanPostEncoder.encode(value) ??
+        (throw const BarcodeInputException.bwipp(
+          'japanpostTooLong#17271',
+          'The input is too long',
+        ));
     double eighth = l.heightPt / 8;
     const double w = JapanPostEncoder.barWidth;
     return l.render(

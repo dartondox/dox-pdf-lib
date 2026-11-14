@@ -1,44 +1,53 @@
 import 'dart:convert';
 
 import 'barcode_symbol.dart';
+import 'barcode_validator.dart';
 
 /// QR code like BWIPP (bwip-js 4.11.4), so the symbol is the same as in
-/// pdfme: the same segments (numeric, alphanumeric, byte, kanji), version,
-/// error correction level and mask.
+/// pdfme: the same segments (numeric, alphanumeric, byte), version, error
+/// correction level and mask.
 ///
 /// A port of BWIPP's `qrcode` encoder (barcode.ps, version 2026-05-28, MIT
 /// license, Copyright (c) 2004-2026 Terry Burton) with the options bwip-js
 /// gets from pdfme: full QR code, error correction level M raised to the
-/// highest level that fits the same version, automatic mask.
+/// highest level that fits the same version, automatic mask, and no kanji
+/// mode (bwip-js sets `suppresskanjimode`, as it sends UTF-8 bytes).
 class QrEncoder {
   QrEncoder._(this._msg);
 
-  /// The module grid of [value], or null when it does not fit in a QR code.
-  static ModuleGrid? encode(String value) {
+  /// The module grid of [value] (not empty). Throws a
+  /// [BarcodeInputException] with the bwip-js message when it does not fit
+  /// in a QR code.
+  static ModuleGrid encode(String value) {
     // bwip-js sends text with non-ASCII letters as UTF-8 bytes
     List<int> msg = utf8.encode(value);
-    if (msg.isEmpty || msg.length > 7089) return null;
+    if (msg.length > 7089) {
+      throw const BarcodeInputException.bwipp(
+        'qrcodeInputTooLong#27120',
+        'The input data is too long',
+      );
+    }
     return QrEncoder._(msg)._symbol();
   }
 
+  static const BarcodeInputException _noSymbol = BarcodeInputException.bwipp(
+    'qrcodeNoValidSymbol#27542',
+    'Maximum length exceeded or invalid content',
+  );
+
   final List<int> _msg;
 
-  static const int _n = 0, _a = 1, _b = 2, _k = 3;
+  static const int _n = 0, _a = 1, _b = 2;
 
-  /// Mode indicators of N, A, B and K.
-  static const List<String> _modeBits = <String>[
-    '0001',
-    '0010',
-    '0100',
-    '1000',
-  ];
+  /// Mode indicators of N, A and B.
+  static const List<String> _modeBits = <String>['0001', '0010', '0100'];
 
-  /// Character count bits of N, A, B, K per version group (1-9, 10-26,
+  /// Character count bits of N, A, B per version group (1-9, 10-26,
   /// 27-40).
   static const List<List<int>> _countBits = <List<int>>[
-    <int>[10, 9, 8, 8],
-    <int>[12, 11, 16, 10],
-    <int>[14, 13, 16, 12],
+    <int>[10, 9, 8],
+    <int>[12, 11, 16],
+    <int>[14, 13, 16],
   ];
 
   static const String _alphanumeric =
@@ -46,15 +55,9 @@ class QrEncoder {
 
   // BWIPP's mode optimization tables (the three full QR version groups)
   static const List<int> _mode0NbeforeB = <int>[4, 4, 5];
-  static const List<int> _modeBKbeforeB = <int>[9, 12, 13];
-  static const List<int> _modeBKbeforeA = <int>[8, 10, 11];
-  static const List<int> _modeBKbeforeN = <int>[8, 9, 11];
-  static const List<int> _modeBKbeforeE = <int>[5, 5, 6];
-  static const List<int> _modeBAbeforeK = <int>[11, 12, 14];
   static const List<int> _modeBAbeforeB = <int>[11, 15, 16];
   static const List<int> _modeBAbeforeN = <int>[12, 13, 15];
   static const List<int> _modeBAbeforeE = <int>[6, 7, 8];
-  static const List<int> _modeBNbeforeK = <int>[6, 7, 8];
   static const List<int> _modeBNbeforeB = <int>[6, 8, 9];
   static const List<int> _modeBNbeforeA = <int>[6, 7, 8];
   static const List<int> _modeBNbeforeE = <int>[3, 4, 4];
@@ -311,11 +314,9 @@ class QrEncoder {
   late final List<int> _numAs = List<int>.filled(_len + 1, 0);
   late final List<int> _numAorNs = List<int>.filled(_len + 1, 0);
   late final List<int> _numBs = List<int>.filled(_len + 1, 0);
-  late final List<int> _numKs = List<int>.filled(_len + 1, 0);
   late final List<int> _nextNs = <int>[...List<int>.filled(_len, 0), 9999];
   late final List<int> _nextBs = <int>[...List<int>.filled(_len, 0), 9999];
   late final List<int> _nextAs = <int>[...List<int>.filled(_len, 0), 9999];
-  late final List<int> _nextKs = <int>[...List<int>.filled(_len, 0), 9999];
 
   static bool _isDigit(int c) => c >= 0x30 && c <= 0x39;
 
@@ -326,22 +327,6 @@ class QrEncoder {
   void _count() {
     for (int i = _len - 1; i >= 0; i--) {
       int c = _msg[i];
-      bool kanji = false;
-      if ((c >= 0x81 && c <= 0x9f) || (c >= 0xe0 && c <= 0xeb)) {
-        int v = i + 1 < _len ? c * 256 + _msg[i + 1] : 0;
-        int low = v & 0xff;
-        kanji =
-            ((v >= 0x8140 && v <= 0x9ffc) || (v >= 0xe040 && v <= 0xebbf)) &&
-            low >= 0x40 &&
-            low <= 0xfc &&
-            low != 0x7f;
-      }
-      if (kanji) {
-        _nextKs[i] = 0;
-        _numKs[i] = _numKs[i + 2] + 1;
-      } else {
-        _nextKs[i] = _nextKs[i + 1] + 1;
-      }
       if (_isDigit(c)) {
         _nextNs[i] = 0;
         _numNs[i] = _numNs[i + 1] + 1;
@@ -357,15 +342,8 @@ class QrEncoder {
         _nextAs[i] = _nextAs[i + 1] + 1;
       }
     }
-    // the second byte of a kanji pair does not start one
-    for (int i = 0; i < _len; i++) {
-      if (_numKs[i] > 0) {
-        _numKs[i + 1] = 0;
-        _nextKs[i + 1] = _nextKs[i + 1] + 1;
-      }
-    }
     for (int i = _len - 1; i >= 0; i--) {
-      if (_numNs[i] + _numAs[i] + _numKs[i] == 0) {
+      if (_numNs[i] + _numAs[i] == 0) {
         _nextBs[i] = 0;
         _numBs[i] = _numBs[i + 1] + 1;
       } else {
@@ -381,14 +359,10 @@ class QrEncoder {
     int mode = -1;
     int i = 0;
     while (i < _len) {
-      int numK = _numKs[i];
       int numB = _numBs[i];
       int numA = _numAs[i];
       int numN = _numNs[i];
       int numAorN = _numAorNs[i];
-      bool kBefore(List<int> t, List<int> next) =>
-          numK >= t[ver] && next[numK * 2 + i] == 0;
-      bool kBeforeEnd(List<int> t) => numK >= t[ver] && numK * 2 + i == _len;
       bool aBefore(List<int> t, List<int> next) =>
           numA >= t[ver] && next[numA + i] == 0;
       bool aBeforeEnd(List<int> t) => numA >= t[ver] && numA + i == _len;
@@ -403,40 +377,23 @@ class QrEncoder {
           _nextNs[i] >= _len || _numNs[_nextNs[i] + i] < t[ver];
       int next;
       if (mode == -1) {
-        if (kBefore(_one, _nextAs) ||
-            kBefore(_one, _nextNs) ||
-            kBefore(_modeBKbeforeE, _nextBs) ||
-            kBeforeEnd(_one)) {
-          next = _k;
-        } else if (numK >= 1) {
-          next = _b;
-        } else if (nBefore(_mode0NbeforeB, _nextKs) ||
-            nBefore(_mode0NbeforeB, _nextBs)) {
+        if (nBefore(_mode0NbeforeB, _nextBs)) {
           next = _n;
         } else if (nBefore(_one, _nextBs)) {
           next = _b;
         } else if (nBefore(_modeANbeforeE, _nextAs) || nBeforeEnd(_one)) {
           next = _n;
-        } else if (aBefore(_modeBAbeforeE, _nextKs) ||
-            aorNBeforeB(_modeBAbeforeE) ||
-            aorNBeforeEnd(_one)) {
+        } else if (aorNBeforeB(_modeBAbeforeE) || aorNBeforeEnd(_one)) {
           next = _a;
         } else {
           next = _b;
         }
       } else if (mode == _b) {
-        if (kBefore(_modeBKbeforeB, _nextBs) ||
-            kBefore(_modeBKbeforeA, _nextAs) ||
-            kBefore(_modeBKbeforeN, _nextNs) ||
-            kBeforeEnd(_modeBKbeforeE)) {
-          next = _k;
-        } else if (aBefore(_modeBAbeforeK, _nextKs) ||
-            aBefore(_modeBAbeforeB, _nextBs) ||
+        if (aBefore(_modeBAbeforeB, _nextBs) ||
             aBefore(_modeBAbeforeN, _nextNs) ||
             aBeforeEnd(_modeBAbeforeE)) {
           next = _a;
-        } else if (nBefore(_modeBNbeforeK, _nextKs) ||
-            nBefore(_modeBNbeforeB, _nextBs) ||
+        } else if (nBefore(_modeBNbeforeB, _nextBs) ||
             nBefore(_modeBNbeforeA, _nextAs) ||
             nBeforeEnd(_modeBNbeforeE)) {
           next = _n;
@@ -448,9 +405,7 @@ class QrEncoder {
           next = _b;
         }
       } else if (mode == _a) {
-        if (numK >= 1) {
-          next = _k;
-        } else if (numB >= 1) {
+        if (numB >= 1) {
           next = _b;
         } else if (nBefore(_modeANbeforeA, _nextAs) ||
             nBefore(_modeANbeforeB, _nextBs) ||
@@ -461,16 +416,6 @@ class QrEncoder {
         } else {
           next = _b;
         }
-      } else if (mode == _n) {
-        next = numK >= 1
-            ? _k
-            : numB >= 1
-            ? _b
-            : numA >= 1
-            ? _a
-            : numN >= 1
-            ? _n
-            : _b;
       } else {
         next = numB >= 1
             ? _b
@@ -478,18 +423,15 @@ class QrEncoder {
             ? _a
             : numN >= 1
             ? _n
-            : numK >= 1
-            ? _k
             : _b;
       }
       List<int> dat;
       if (next == mode) {
-        dat = _msg.sublist(i, i + (mode == _k ? 2 : 1));
+        dat = _msg.sublist(i, i + 1);
         seq.last.$2.addAll(dat);
       } else {
         mode = next;
         int count = switch (mode) {
-          _k => numK * 2,
           _b => numB,
           _a => numA,
           _ => numN,
@@ -506,24 +448,34 @@ class QrEncoder {
       value.toRadixString(2).padLeft(width, '0');
 
   /// The bits of the segments for version group [ver], or null when a
-  /// segment is too long for its character count.
+  /// segment is too long for its character count. More than 23648 bits
+  /// throw, like BWIPP's `addtobits`.
   static String? _bits(List<(int, List<int>)> seq, int ver) {
     StringBuffer out = StringBuffer();
+    void add(String bits) {
+      if (out.length + bits.length > 23648) {
+        throw const BarcodeInputException.bwipp(
+          'qrcodeNoValidSymbol#27236',
+          'Maximum length exceeded or invalid content',
+        );
+      }
+      out.write(bits);
+    }
+
     for ((int, List<int>) s in seq) {
       int mode = s.$1;
       List<int> chars = s.$2;
-      int count = mode == _k ? chars.length ~/ 2 : chars.length;
       int countBits = _countBits[ver][mode];
-      if (count >= 1 << countBits) return null;
-      out
-        ..write(_modeBits[mode])
-        ..write(_bin(count, countBits));
+      add(_modeBits[mode]);
+      if (chars.length >= 1 << countBits) return null;
+      add(_bin(chars.length, countBits));
+      StringBuffer data = StringBuffer();
       switch (mode) {
         case _n:
           for (int k = 0; k < chars.length; k += 3) {
             int end = k + 3 > chars.length ? chars.length : k + 3;
             String digits = String.fromCharCodes(chars.sublist(k, end));
-            out.write(_bin(int.parse(digits), <int>[0, 4, 7, 10][end - k]));
+            data.write(_bin(int.parse(digits), <int>[0, 4, 7, 10][end - k]));
           }
         case _a:
           for (int k = 0; k < chars.length; k += 2) {
@@ -532,27 +484,22 @@ class QrEncoder {
               v =
                   v * 45 +
                   _alphanumeric.indexOf(String.fromCharCode(chars[k + 1]));
-              out.write(_bin(v, 11));
+              data.write(_bin(v, 11));
             } else {
-              out.write(_bin(v, 6));
+              data.write(_bin(v, 6));
             }
           }
-        case _b:
-          for (int c in chars) {
-            out.write(_bin(c, 8));
-          }
         default:
-          for (int k = 0; k < chars.length; k += 2) {
-            int v = chars[k] * 256 + chars[k + 1];
-            v -= v < 0xe040 ? 0x8140 : 0xc140;
-            out.write(_bin((v >> 8) * 0xc0 + (v & 0xff), 13));
+          for (int c in chars) {
+            data.write(_bin(c, 8));
           }
       }
+      add(data.toString());
     }
     return out.toString();
   }
 
-  ModuleGrid? _symbol() {
+  ModuleGrid _symbol() {
     _count();
     List<String?> groupBits = <String?>[
       for (int ver = 0; ver < 3; ver++) _bits(_segments(ver), ver),
@@ -570,7 +517,7 @@ class QrEncoder {
       }
       return _matrix(v, level, _codewords(bits, m, level));
     }
-    return null;
+    throw _noSymbol;
   }
 
   /// The data and error correction codewords, interleaved.

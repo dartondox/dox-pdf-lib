@@ -244,10 +244,12 @@ class DateFormatter {
       case 's':
         return _number(d.second, t);
       case 'S':
-        int fraction = n <= 3
-            ? d.millisecond ~/ _power(3 - n)
-            : d.millisecond * _power(n - 3);
-        return _pad(fraction, n);
+        // ponytail: BigInt, so many S never overflow; JavaScript writes
+        // 1e21 and more with an exponent, we do not (22 or more S only)
+        BigInt ms = BigInt.from(d.millisecond);
+        BigInt ten = BigInt.from(10);
+        BigInt fraction = n <= 3 ? ms ~/ ten.pow(3 - n) : ms * ten.pow(n - 3);
+        return fraction.toString().padLeft(n, '0');
       case 'X':
       case 'x':
         int offset = d.timeZoneOffset.inMinutes;
@@ -272,8 +274,6 @@ class DateFormatter {
     }
     throw FormatException('Unsupported date format token: $t');
   }
-
-  static int _power(int e) => <int>[1, 10, 100, 1000][e];
 
   static String _sign(int offsetMinutes) => offsetMinutes < 0 ? '-' : '+';
 

@@ -12,9 +12,16 @@
   same grid as bwip-js, so small codes look the same as in pdfme.
 - QR codes have the same modules as in pdfme. bwip-js raises the error
   correction level when the data still fits the same size, picks the mask
-  with its own scores and mixes number, letter, byte and kanji segments.
-  The `barcode` package did not, so the codes looked different. Now a port
-  of the bwip-js (BWIPP) encoder makes the symbol.
+  with its own scores and mixes number, letter and byte segments (never
+  kanji). The `barcode` package did not, so the codes looked different.
+  Now a port of the bwip-js (BWIPP) encoder makes the symbol.
+- Barcode values that pass pdfme's check but that bwip-js refuses make
+  `generate` throw a `BarcodeInputException` with the bwip-js message,
+  like pdfme. Before, they drew a code or nothing. Eg. GS1 Data Matrix data
+  that breaks the GS1 rules (unknown AI, too long, bad date or check
+  digit, AIs that exclude or need each other), a lowercase NW-7 start or
+  stop letter, too long Code 128, Japan Post or PDF417 data, and text with
+  a lone UTF-16 surrogate (`URI malformed`).
 - GS1 Data Matrix has the same modules and size as in pdfme. Letters now
   use C40, Text, X12 and EDIFACT like bwip-js, so a value with many letters
   is no longer one size bigger.
@@ -25,6 +32,7 @@
 - Date formats: all date-fns tokens work, like `do` (`7th`), `PPP` (`May
   7th, 2024`), `Q`, `w` and `B`. Other tokens made the format fall back to
   the default format. `iiii` gives the full day name (it gave `Tue`).
+  Seven or more `S` (like `ss.SSSSSSS`) made `generate` crash.
 - The crosscheck with pdfme compares every schema box on its own: the ink
   box (place and size) and the pixels, with tight limits per type, and the
   bars of linear barcodes. It has many new variants of every type.

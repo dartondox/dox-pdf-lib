@@ -175,6 +175,12 @@ dox_pdf_lib).
 
 `table` is not supported yet.
 
+Barcodes: a value that pdfme's check refuses (eg. a bad EAN-13 check digit)
+draws nothing, like in pdfme. A value that passes that check but that
+bwip-js can not encode makes `generate` throw a `BarcodeInputException`
+with the bwip-js message, like pdfme's `generate` fails. Eg. GS1 data that
+breaks the GS1 rules: `bwipp.GS1valueTooLong#3845: AI 10: Too long`.
+
 ### multiVariableText
 
 The schema has a `text` with `{name}` variables and a `variables` list of
