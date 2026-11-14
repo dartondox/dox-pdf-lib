@@ -482,7 +482,10 @@ pub fn prepare_save(doc: &mut Doc, flags: i32) -> Result<Document> {
     // The copy is made here, on the caller's thread, so the file has the
     // document as it was when save was called. Measured on an 11 MB file
     // with 200 pages: copy 2.4 ms, write 2.8 ms.
-    Ok(doc.pdf.clone())
+    let mut pdf = doc.pdf.clone();
+    // the custom fonts: a subset is fast; a full font is compressed once
+    crate::font::write_fonts(&doc.fonts, &mut pdf)?;
+    Ok(pdf)
 }
 
 /// Writes the file, without the lock.

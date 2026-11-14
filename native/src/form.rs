@@ -49,6 +49,16 @@ pub trait FormFont {
     fn encode(&self, text: &str) -> Result<Vec<u8>>;
     /// `heightAtSize(size, { descender })`.
     fn height(&self, size: f64, descender: bool) -> f64;
+    /// The operators that show the text at `size`: `<hex> Tj` like pdf-lib.
+    /// A custom font places the glyphs of a complex script (see
+    /// `CustomFont::show_text`); `rtl` is the bidi direction of the
+    /// paragraph of the line, or `None` to take it from the line.
+    fn show(&self, text: &str, _size: f64, _rtl: Option<bool>) -> Result<Vec<u8>> {
+        let mut out = vec![b'<'];
+        out.extend(self.encode(text)?);
+        out.extend_from_slice(b"> Tj");
+        Ok(out)
+    }
 }
 
 impl FormFont for font::Font {
@@ -82,14 +92,36 @@ struct FieldFont {
 }
 
 fn form_font(doc: &Doc, id: ObjectId) -> Result<FieldFont> {
-    if let Some(&std_id) = doc.draw.fonts.get(&id) {
-        let f: &'static font::Font = font::font(std_id)?;
-        return Ok(FieldFont {
-            id,
-            f: Box::new(StdFont(f)),
-        });
+    let f: Box<dyn FormFont> = match doc.fonts.get(&id) {
+        Some(font::Embedded::Standard(std_id)) => Box::new(StdFont(font::font(*std_id)?)),
+        // shares the glyphs with the document's font, so a subset gets them
+        Some(font::Embedded::Custom(c)) => Box::new(c.share()),
+        None => return Err(Error::generic("the font is not embedded in this document")),
+    };
+    Ok(FieldFont { id, f })
+}
+
+impl FormFont for crate::custom_font::CustomFont {
+    fn name(&self) -> &str {
+        &self.file.name
     }
-    Err(Error::generic("the font is not embedded in this document"))
+    fn width(&self, text: &str, size: f64) -> Result<f64> {
+        self.width_of_text(text, size)
+    }
+    fn encode(&self, text: &str) -> Result<Vec<u8>> {
+        crate::custom_font::CustomFont::encode(self, text)
+    }
+    fn height(&self, size: f64, descender: bool) -> f64 {
+        let [top, bottom, desc] = self.file.vertical();
+        let mut h = top - bottom;
+        if !descender {
+            h += desc;
+        }
+        (h / 1000.0) * size
+    }
+    fn show(&self, text: &str, size: f64, rtl: Option<bool>) -> Result<Vec<u8>> {
+        self.show_text(text, size, rtl)
+    }
 }
 
 /// A `'static` standard font as a boxed `FormFont`.
@@ -113,13 +145,13 @@ impl FormFont for StdFont {
 /// pdf-lib's `getDefaultFont`: Helvetica, embedded once per document.
 fn default_font(doc: &mut Doc) -> Result<ObjectId> {
     if let Some(id) = doc.form.default_font
-        && doc.draw.fonts.contains_key(&id)
+        && doc.fonts.contains_key(&id)
     {
         return Ok(id);
     }
     const HELVETICA: i32 = 4;
     let id = font::embed(&mut doc.pdf, HELVETICA, None)?;
-    doc.draw.fonts.insert(id, HELVETICA);
+    doc.fonts.insert(id, font::Embedded::Standard(HELVETICA));
     doc.form.default_font = Some(id);
     Ok(id)
 }
@@ -783,7 +815,8 @@ fn reduce_rotation(deg: f64) -> i32 {
 
 struct Line {
     text: String,
-    hex: Vec<u8>,
+    /// the operators that show the text (`FormFont::show`)
+    ops: Vec<u8>,
     x: f64,
     y: f64,
     height: f64,
@@ -796,9 +829,8 @@ fn text_lines(o: &mut Ops, lines: &[Line], color: Color, font: &str, size: f64) 
     o.font(font, size);
     for l in lines {
         o.op(&[1.0, 0.0, 0.0, 1.0, l.x, l.y], "Tm");
-        o.0.push(b'<');
-        o.0.extend_from_slice(&l.hex);
-        o.0.extend_from_slice(b"> Tj\n");
+        o.0.extend_from_slice(&l.ops);
+        o.0.push(b'\n');
     }
     o.op(&[], "ET");
 }
@@ -934,7 +966,7 @@ fn layout_single(text: &str, alignment: i32, size: Option<f64>, f: &dyn FormFont
         Some(s) => s,
         None => compute_font_size(std::slice::from_ref(&line), f, b, false)?,
     };
-    let hex = f.encode(&line)?;
+    let ops = f.show(&line, size, None)?;
     let width = f.width(&line, size)?;
     let height = f.height(size, false);
     let x = align_x(alignment, b, width);
@@ -942,7 +974,7 @@ fn layout_single(text: &str, alignment: i32, size: Option<f64>, f: &dyn FormFont
     Ok((
         Line {
             text: line,
-            hex,
+            ops,
             x,
             y,
             height,
@@ -987,15 +1019,17 @@ fn layout_multi(
     let mut out = Vec::new();
     let mut y = b.y + b.h;
     for line in &lines {
+        // the wrapped lines of a paragraph keep its bidi direction
+        let rtl = crate::custom_font::paragraph_rtl(line);
         let mut rest: Option<Vec<char>> = Some(line.chars().collect());
         while let Some(input) = rest {
             let (text, width, remainder) = split_out(&input, b.w, f, size)?;
             let x = align_x(alignment, b, width);
             y -= line_height;
-            let hex = f.encode(&text)?;
+            let ops = f.show(&text, size, rtl)?;
             out.push(Line {
                 text,
-                hex,
+                ops,
                 x,
                 y,
                 height,
@@ -1052,7 +1086,7 @@ fn layout_combed(text: &str, size: Option<f64>, f: &dyn FormFont, b: Bounds, cel
         let center = b.x + (cell_width * cell as f64 + cell_width / 2.0);
         out.push(Line {
             text: all.clone(),
-            hex: f.encode(&c)?,
+            ops: f.show(&c, size, None)?,
             x: center - width / 2.0,
             y,
             height,

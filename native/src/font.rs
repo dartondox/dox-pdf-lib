@@ -3,6 +3,10 @@
 //!
 //! The metrics come from `fonts.bin`, made from @pdf-lib/standard-fonts by
 //! `tool/crosscheck/gen_fonts.mjs`, so widths match pdf-lib exactly.
+//!
+//! `Embedded` is any font of a document, standard or custom
+//! (custom_font.rs). Other areas (eg. form fields) use `embedded` to get
+//! the width and the encoding of a text in any font.
 
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -10,7 +14,8 @@ use std::sync::OnceLock;
 
 use lopdf::{Dictionary, Object, ObjectId};
 
-use crate::document::ref_to_i64;
+use crate::custom_font::{CustomFont, parse_features};
+use crate::document::{ref_from_i64, ref_to_i64};
 use crate::ffi_util::*;
 
 static DATA: &[u8] = include_bytes!("fonts.bin");
@@ -195,6 +200,111 @@ pub fn embed(pdf: &mut lopdf::Document, id: i32, custom_name: Option<&[u8]>) -> 
     Ok(pdf.add_object(Object::Dictionary(dict)))
 }
 
+/// A font embedded in a document.
+#[derive(Clone)]
+pub enum Embedded {
+    /// The index of the standard font.
+    Standard(i32),
+    Custom(Box<CustomFont>),
+}
+
+/// The fonts of a document: font ref -> font. Part of `Doc`.
+pub type Fonts = HashMap<ObjectId, Embedded>;
+
+/// The font `id` of the document.
+pub fn embedded(fonts: &mut Fonts, id: ObjectId) -> Result<&mut Embedded> {
+    fonts
+        .get_mut(&id)
+        .ok_or_else(|| Error::generic("the font is not embedded in this document"))
+}
+
+impl Embedded {
+    /// pdf-lib's `PDFFont.name`, also the tag of its page resource name.
+    pub fn name(&self) -> Result<&str> {
+        Ok(match self {
+            Embedded::Standard(i) => &font(*i)?.name,
+            Embedded::Custom(c) => &c.file.name,
+        })
+    }
+
+    /// pdf-lib's `encodeText`, as hex digits without the `<>`. A subset
+    /// font keeps the glyphs for save.
+    pub fn encode(&mut self, text: &str) -> Result<Vec<u8>> {
+        match self {
+            Embedded::Standard(i) => {
+                let glyphs = font(*i)?.glyphs(text)?;
+                let mut hex = Vec::with_capacity(glyphs.len() * 2);
+                for (code, _) in glyphs {
+                    hex.extend_from_slice(format!("{code:02X}").as_bytes());
+                }
+                Ok(hex)
+            }
+            Embedded::Custom(c) => c.encode(text),
+        }
+    }
+
+    /// The operators that show `text` (for drawText and other areas), like
+    /// pdf-lib's `<hex> Tj`. See `CustomFont::show_text`.
+    /// `rtl`: the direction of the paragraph of the line
+    /// (`custom_font::paragraph_rtl`), or `None` to take it from the line.
+    pub fn show_text(&mut self, text: &str, size: f64, rtl: Option<bool>) -> Result<Vec<u8>> {
+        match self {
+            Embedded::Standard(_) => {
+                let mut out = vec![b'<'];
+                out.extend(self.encode(text)?);
+                out.extend_from_slice(b"> Tj");
+                Ok(out)
+            }
+            Embedded::Custom(c) => c.show_text(text, size, rtl),
+        }
+    }
+
+    /// Where a line may break without splitting a letter from its marks:
+    /// `true` per char, before it. Every char for a standard font.
+    pub fn break_points(&self, text: &str) -> Result<Vec<bool>> {
+        match self {
+            Embedded::Standard(_) => Ok(vec![true; text.chars().count()]),
+            Embedded::Custom(c) => c.break_points(text),
+        }
+    }
+
+    /// pdf-lib's `widthOfTextAtSize`.
+    pub fn width_of_text(&mut self, text: &str, size: f64) -> Result<f64> {
+        match self {
+            Embedded::Standard(i) => font(*i)?.width_of_text(text, size),
+            Embedded::Custom(c) => c.width_of_text(text, size),
+        }
+    }
+
+    /// `[top, bottom, descender]`: height = top - bottom, without the
+    /// descender it is height + descender (see PDFFont in Dart).
+    #[allow(dead_code)] // for other areas, eg. the font size of a form field
+    pub fn vertical(&self) -> Result<[f64; 3]> {
+        Ok(match self {
+            Embedded::Standard(i) => font(*i)?.vertical(),
+            Embedded::Custom(c) => c.file.vertical(),
+        })
+    }
+
+    pub fn code_points(&self) -> Result<&[u32]> {
+        Ok(match self {
+            Embedded::Standard(i) => font(*i)?.code_points(),
+            Embedded::Custom(c) => c.file.code_points(),
+        })
+    }
+}
+
+/// Save: writes the objects of the custom fonts into `pdf`, the copy that
+/// is written (pdf-lib embeds fonts at save too).
+pub fn write_fonts(fonts: &Fonts, pdf: &mut lopdf::Document) -> Result<()> {
+    for (id, f) in fonts {
+        if let Embedded::Custom(c) = f {
+            c.write(pdf, *id)?;
+        }
+    }
+    Ok(())
+}
+
 fn text_arg<'a>(ptr: *const u8, len: i64) -> Result<&'a str> {
     std::str::from_utf8(slice(ptr, len)?).map_err(|_| Error::generic("text is not UTF-8"))
 }
@@ -215,7 +325,7 @@ pub extern "C" fn dox_pdf_embed_standard_font(
         let custom = slice(name, name_len)?;
         with_doc(handle, |d| {
             let id = embed(&mut d.pdf, font, Some(custom))?;
-            d.draw.fonts.insert(id, font);
+            d.fonts.insert(id, Embedded::Standard(font));
             write_out(out, ref_to_i64(id));
             Ok(OK)
         })
@@ -275,6 +385,116 @@ pub extern "C" fn dox_pdf_font_encode(font: i32, text: *const u8, len: i64, out:
         }
         write_out(out, bytes_into_raw(hex));
         Ok(OK)
+    })
+}
+
+/// Embeds a TrueType or OpenType font file, like pdf-lib's `embedFont`.
+/// `features`: see `parse_features`. `out[0]` = the font ref, `out[1]` = a
+/// `Bytes` address of the font name, `vertical` = see `Embedded::vertical`.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn dox_pdf_embed_font(
+    handle: *const c_void,
+    data: *const u8,
+    data_len: i64,
+    subset: i32,
+    name: *const u8,
+    name_len: i64,
+    features: *const u8,
+    features_len: i64,
+    out: *mut i64,
+    vertical: *mut f64,
+) -> i32 {
+    call(|| {
+        let file = crate::custom_font::load(slice(data, data_len)?)?;
+        let custom = String::from_utf8_lossy(slice(name, name_len)?).into_owned();
+        let features = parse_features(slice(features, features_len)?);
+        // a new object: other documents' embed caches must see it
+        with_doc_mut(handle, |d| {
+            // the name is unique in the file; pdf-lib adds a random number
+            let base = if custom.is_empty() {
+                format!("{}-{}", file.name, d.fonts.len() + 1)
+            } else {
+                custom
+            };
+            let font = CustomFont::new(file, subset != 0, base, features);
+            // the font dict is written at save, at this ref (pdf-lib's `nextRef`)
+            let id = d.pdf.add_object(Object::Null);
+            let v = font.file.vertical();
+            write_out(out, ref_to_i64(id));
+            // SAFETY: Dart passes room for 2 i64 and 3 doubles.
+            unsafe {
+                *out.add(1) = bytes_into_raw(font.file.name.as_bytes().to_vec());
+                for (i, x) in v.iter().enumerate() {
+                    *vertical.add(i) = *x;
+                }
+            }
+            d.fonts.insert(id, Embedded::Custom(Box::new(font)));
+            Ok(OK)
+        })
+    })
+}
+
+/// `out[0]` = the width of `text` at `size` in the document's font `font`.
+#[unsafe(no_mangle)]
+pub extern "C" fn dox_pdf_doc_font_width(
+    handle: *const c_void,
+    font: i64,
+    text: *const u8,
+    len: i64,
+    size: f64,
+    out: *mut f64,
+) -> i32 {
+    call(|| {
+        let text = text_arg(text, len)?;
+        let w = with_doc(handle, |d| {
+            embedded(&mut d.fonts, ref_from_i64(font))?.width_of_text(text, size)
+        })?;
+        // SAFETY: Dart passes room for one double.
+        unsafe { *out = w };
+        Ok(OK)
+    })
+}
+
+/// `out[0]` = a `Bytes` address of the hex codes of `text` in the
+/// document's font `font`.
+#[unsafe(no_mangle)]
+pub extern "C" fn dox_pdf_doc_font_encode(
+    handle: *const c_void,
+    font: i64,
+    text: *const u8,
+    len: i64,
+    out: *mut i64,
+) -> i32 {
+    call(|| {
+        let text = text_arg(text, len)?;
+        let hex = with_doc(handle, |d| embedded(&mut d.fonts, ref_from_i64(font))?.encode(text))?;
+        write_out(out, bytes_into_raw(hex));
+        Ok(OK)
+    })
+}
+
+/// Like `dox_pdf_font_charset`, for the document's font `font`.
+#[unsafe(no_mangle)]
+pub extern "C" fn dox_pdf_doc_font_charset(
+    handle: *const c_void,
+    font: i64,
+    out: *mut i64,
+    cap: i64,
+    count: *mut i64,
+) -> i32 {
+    call(|| {
+        with_doc(handle, |d| {
+            let cps = embedded(&mut d.fonts, ref_from_i64(font))?.code_points()?;
+            write_out(count, cps.len() as i64);
+            if cps.len() as i64 <= cap && !out.is_null() {
+                for (i, cp) in cps.iter().enumerate() {
+                    // SAFETY: Dart passes room for `cap` values.
+                    unsafe { *out.add(i) = *cp as i64 };
+                }
+            }
+            Ok(OK)
+        })
     })
 }
 

@@ -14,6 +14,14 @@ flate2 = "1.1.11"
 png = "0.18.1"
 # rayon: parse the objects of a big file on all cores
 lopdf = { version = "0.47.0", default-features = false, features = ["rayon"] }
+# harfrust: text layout of custom fonts (a port of HarfBuzz)
+harfrust = "0.16.0"
+# read-fonts: read the tables of custom fonts (harfrust uses it too)
+read-fonts = "0.47.0"
+# subsetter: font subsets for embedFont(subset: true), from typst
+subsetter = { version = "0.2.6", default-features = false }
+# unicode-bidi: the order of right-to-left and left-to-right runs (UAX #9)
+unicode-bidi = "0.3.18"
 
 [profile.release]
 opt-level = 3

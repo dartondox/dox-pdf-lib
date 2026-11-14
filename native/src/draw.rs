@@ -18,8 +18,6 @@ use crate::page;
 /// Drawing state of a document. Part of `Doc`, so it is cloned with it.
 #[derive(Clone, Default)]
 pub struct DrawState {
-    /// Embedded standard fonts: font ref -> `StandardFonts` index.
-    pub fonts: HashMap<ObjectId, i32>,
     pages: HashMap<ObjectId, PageState>,
     /// The shared `q` and `Q` streams that wrap old page content.
     push_pop: Option<(ObjectId, ObjectId)>,
@@ -387,7 +385,9 @@ fn clean_text(text: &str) -> String {
 
 /// The words of pdf-lib's `breakTextIntoLines` regex:
 /// `(\n|\f|\r|\u000B)|((.*?)($|<break>|...))` with the `gm` flags.
-fn words(text: &[char], breaks: &[Vec<char>]) -> Vec<String> {
+/// Unlike pdf-lib, a word never ends inside a cluster (a letter and its
+/// marks): `keep[i]` is true where a word may end before char `i`.
+fn words(text: &[char], breaks: &[Vec<char>], keep: &[bool]) -> Vec<String> {
     // line terminators: where `$` matches and `.` does not
     let terminator = |c: char| matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}');
     let mut out = Vec::new();
@@ -412,7 +412,10 @@ fn words(text: &[char], breaks: &[Vec<char>]) -> Vec<String> {
                     None
                 }
             });
-            if let Some(end) = hit {
+            if let Some(mut end) = hit {
+                while end < text.len() && !keep.get(end).copied().unwrap_or(true) && !terminator(text[end]) {
+                    end += 1;
+                }
                 break end;
             }
             p += 1;
@@ -425,22 +428,34 @@ fn words(text: &[char], breaks: &[Vec<char>]) -> Vec<String> {
 }
 
 /// pdf-lib's `breakTextIntoLines`.
-fn break_lines(text: &str, breaks: &[Vec<char>], max_width: f64, f: &font::Font, size: f64) -> Result<Vec<String>> {
-    let chars: Vec<char> = clean_text(text).chars().collect();
+fn break_lines(
+    text: &str,
+    breaks: &[Vec<char>],
+    max_width: f64,
+    f: &mut font::Embedded,
+    size: f64,
+) -> Result<Vec<(String, Option<bool>)>> {
+    let clean = clean_text(text);
+    let chars: Vec<char> = clean.chars().collect();
+    let keep = f.break_points(&clean)?;
+    // the bidi direction of each paragraph; its wrapped lines keep it
+    let mut dirs = clean.split(is_newline).map(crate::custom_font::paragraph_rtl);
+    let mut dir = dirs.next().flatten();
     let mut lines = Vec::new();
     let mut line = String::new();
     let mut width = 0.0;
-    for word in words(&chars, breaks) {
+    for word in words(&chars, breaks, &keep) {
         if word.chars().count() == 1 && word.chars().all(is_newline) {
             if !line.is_empty() {
-                lines.push(std::mem::take(&mut line));
+                lines.push((std::mem::take(&mut line), dir));
             }
+            dir = dirs.next().flatten();
             width = 0.0;
         } else {
             let w = f.width_of_text(&word, size)?;
             if width + w > max_width {
                 if !line.is_empty() {
-                    lines.push(std::mem::take(&mut line));
+                    lines.push((std::mem::take(&mut line), dir));
                 }
                 width = 0.0;
             }
@@ -449,7 +464,7 @@ fn break_lines(text: &str, breaks: &[Vec<char>], max_width: f64, f: &font::Font,
         }
     }
     if !line.is_empty() {
-        lines.push(line);
+        lines.push((line, dir));
     }
     Ok(lines)
 }
@@ -845,6 +860,7 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
     }
     let pdf = &mut doc.pdf;
     let state = &mut doc.draw;
+    let fonts = &mut doc.fonts;
     let input = Input { nums };
     let gs = graphics_state(pdf, state, page, nums[0], nums[1], nums[2] as i32)?;
     let mut o = Ops::default();
@@ -852,17 +868,18 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
     match kind {
         TEXT => {
             let font_ref = ref_from_i64(a(0)? as i64);
-            let font_id = *state
-                .fonts
-                .get(&font_ref)
-                .ok_or_else(|| Error::generic("the font is not embedded in this document"))?;
-            let f = font::font(font_id)?;
+            let f = font::embedded(fonts, font_ref)?;
             let size = a(1)?;
             let text_len = (a(9)? as usize).min(bytes.len());
             let text = std::str::from_utf8(&bytes[..text_len]).map_err(|_| Error::generic("text is not UTF-8"))?;
             let max_width = a(8)?;
-            let lines = if max_width.is_nan() {
-                clean_text(text).split(is_newline).map(str::to_string).collect()
+            // (line, direction of its paragraph); a line of its own is a
+            // paragraph, so it takes its direction from itself
+            let lines: Vec<(String, Option<bool>)> = if max_width.is_nan() {
+                clean_text(text)
+                    .split(is_newline)
+                    .map(|l| (l.to_string(), None))
+                    .collect()
             } else {
                 // word breaks: each one ends with a 0 byte
                 let breaks: Vec<Vec<char>> = bytes[text_len..]
@@ -876,8 +893,11 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
                     .collect();
                 break_lines(text, &breaks, max_width, f, size)?
             };
-            let encoded = lines.iter().map(|l| f.glyphs(l)).collect::<Result<Vec<_>>>()?;
-            let font_name = resource(pdf, state, page, ResKey::Font(font_ref), b"Font", &f.name, || {
+            let shown = lines
+                .iter()
+                .map(|(l, rtl)| f.show_text(l, size, *rtl))
+                .collect::<Result<Vec<_>>>()?;
+            let font_name = resource(pdf, state, page, ResKey::Font(font_ref), b"Font", f.name()?, || {
                 Object::Reference(font_ref)
             })?;
             let (rot, xskew, yskew) = (a(2)?, a(3)?, a(4)?);
@@ -898,12 +918,9 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
                 ],
                 "Tm",
             );
-            for glyphs in encoded {
-                o.0.push(b'<');
-                for (code, _) in glyphs {
-                    let _ = write!(o.0, "{code:02X}");
-                }
-                o.0.extend_from_slice(b"> Tj\nT*\n");
+            for ops in shown {
+                o.0.extend_from_slice(&ops);
+                o.0.extend_from_slice(b"\nT*\n");
             }
             o.op(&[], "ET");
             o.op(&[], "Q");
@@ -1262,7 +1279,7 @@ mod tests {
         let w = |t: &str, b: &[&str]| {
             let chars: Vec<char> = t.chars().collect();
             let breaks: Vec<Vec<char>> = b.iter().map(|b| b.chars().collect()).collect();
-            words(&chars, &breaks)
+            words(&chars, &breaks, &[])
         };
         assert_eq!(w("ab cd\nef", &[" "]), ["ab ", "cd", "\n", "ef", ""]);
         assert_eq!(w("abc", &[""]), ["a", "b", "c", ""]);
@@ -1275,7 +1292,7 @@ mod tests {
         let p = new_page(&mut d.pdf, 200.0, 200.0);
         insert_page(&mut d.pdf, 0, p).unwrap();
         let f = font::embed(&mut d.pdf, 4, None).unwrap();
-        d.draw.fonts.insert(f, 4);
+        d.fonts.insert(f, font::Embedded::Standard(4));
         let mut nums = vec![f64::NAN; ARGS];
         nums[2] = -1.0;
         nums[3..8].copy_from_slice(&[2.0, 1.0, 0.0, 0.0, 0.0]);
@@ -1364,7 +1381,7 @@ mod tests {
         let mut d = create(false, b"");
         let p = new_page(&mut d.pdf, 200.0, 200.0);
         let f = font::embed(&mut d.pdf, 4, None).unwrap();
-        d.draw.fonts.insert(f, 4);
+        d.fonts.insert(f, font::Embedded::Standard(4));
         let mut nums = vec![f64::NAN; ARGS];
         nums[2] = -1.0;
         nums[3] = 0.0;

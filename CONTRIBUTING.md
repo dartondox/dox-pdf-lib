@@ -31,7 +31,7 @@ without merge conflicts.
 
 **One file per feature area.**
 
-- Rust: `native/src/<area>.rs`. Now: `ffi_util.rs`, `document.rs`, `page.rs`, `metadata.rs`. Later eg. `draw.rs`, `font.rs`, `image.rs`, `form.rs`, `attachment.rs`, `embed.rs`.
+- Rust: `native/src/<area>.rs`. Now: `ffi_util.rs`, `document.rs`, `page.rs`, `metadata.rs`. Later eg. `draw.rs`, `font.rs` (with `custom_font.rs`), `image.rs`, `form.rs`, `attachment.rs`, `embed.rs`.
 - Dart bindings: `lib/src/ffi/<area>_bindings.dart`.
 - Dart API: `lib/src/api/<area>.dart`. Code that needs the private parts of `PDFDocument` or `PDFPage` (eg. the handle) is a `part of 'document.dart'`, often an `extension` on `PDFDocument` or `PDFPage` (see `metadata.dart`).
 - `native/src/lib.rs`, the `part` list in `lib/src/api/document.dart` and `lib/dox_pdf_lib.dart` are short lists. A new area adds one line to each.
@@ -75,4 +75,6 @@ Every new feature and every bug fix must add tests.
 - Dart: `dart test`.
 - Crosscheck with pdf-lib: run `npm ci` in `tool/crosscheck` (needs Node.js). Then `dart test test/crosscheck_test.dart` compares what dox_pdf_lib and pdf-lib read from the same files. Without `node_modules` the test is skipped. CI always runs it.
 - Drawing crosscheck: `test/draw_crosscheck_test.dart` draws the same scene as `tool/crosscheck/draw.mjs` and compares the pages rendered by `pdftoppm` (poppler-utils), and the font metrics. Keep the two scenes the same.
+- Font crosscheck: `test/font_crosscheck_test.dart` embeds the same custom fonts as `tool/crosscheck/fonts.mjs` (pdf-lib + @pdf-lib/fontkit), and compares the metrics and the encoded text exactly, the rendered pages, and the text of `pdftotext`. The test fonts are downloaded once into `.dart_tool/test_fonts` (see `test/render_support.dart`). Small fonts for unit tests are in `test/fixtures/fonts`.
+- Language matrix: `test/language_test.dart` draws real sentences in 11 languages (Noto fonts, full and subset) and checks copy and paste (`pdftotext`), wrapping, the render (against pdf-lib, or not blank and no `.notdef`), and the widths (exactly pdf-lib + fontkit, or for complex scripts `hb-shape` from HarfBuzz, `libharfbuzz-bin`). `tool/crosscheck/languages.mjs` makes the pdf-lib side.
 - `native/src/fonts.bin` holds the standard font metrics of `@pdf-lib/standard-fonts`. `node tool/crosscheck/gen_fonts.mjs` makes it again.

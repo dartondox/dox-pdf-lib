@@ -85,6 +85,7 @@ pub struct Doc {
     /// The embed cache of another document checks it.
     pub generation: u64,
     pub form: crate::form::FormState,
+    pub fonts: crate::font::Fonts,
 }
 
 pub type Shared = Mutex<Doc>;

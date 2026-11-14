@@ -1,0 +1,514 @@
+// The language matrix: real sentences in Noto fonts, full and subset.
+// For each language:
+// - copy: pdftotext gives back the text, also of a wrapped paragraph;
+// - render: the page renders like pdf-lib's (languages that fontkit lays
+//   out like HarfBuzz), or is not blank and has no `.notdef` glyph;
+// - width: widthOfTextAtSize equals pdf-lib + fontkit exactly, or for a
+//   complex script HarfBuzz's advances (`hb-shape`), and the glyphs equal
+//   hb-shape's;
+// - wrap: a wrapped line never starts inside a cluster (a mark).
+// Needs node (npm ci in tool/crosscheck), poppler-utils, hb-shape
+// (libharfbuzz-bin) and the test fonts (downloaded once).
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dox_pdf_lib/dox_pdf_lib.dart';
+import 'package:test/test.dart';
+
+import 'render_support.dart';
+
+class _Lang {
+  const _Lang(
+    this.font,
+    this.lines, {
+    this.complex = false,
+    this.pdfLibRender = true,
+    this.mixed = false,
+  });
+
+  final String font;
+  final List<String> lines;
+
+  /// Laid out by HarfBuzz's rules (fontkit can not lay it out the same).
+  final bool complex;
+
+  /// pdf-lib renders it right. Not for Korean: fontkit's Hangul layout
+  /// makes a space glyph that the cmap has not, and pdf-lib's full font has
+  /// no width for it, so it draws it 1000 units wide.
+  final bool pdfLibRender;
+
+  /// Left-to-right and right-to-left text in one line. hb-shape has no
+  /// bidi, so the words are compared one by one.
+  final bool mixed;
+}
+
+const Map<String, _Lang> _langs = <String, _Lang>{
+  'English': _Lang('NotoSans-Regular.ttf', <String>[
+    'The quick brown fox jumps over the lazy dog.',
+    'Office affinity: fine, fluffy waffles.',
+  ]),
+  'German': _Lang('NotoSans-Regular.ttf', <String>[
+    'Größe, Übermaß und Fußgänger: Äpfel, Öl.',
+    'GROẞE STRAẞE, schön müde Bären.',
+  ]),
+  'Vietnamese': _Lang('NotoSans-Regular.ttf', <String>[
+    'Tiếng Việt có dấu: phở bò, chữ Nôm.',
+    'Người ở đâu? Nghiêng ngả, ước mơ.',
+  ]),
+  'Japanese': _Lang('NotoSansJP-Regular.otf', <String>[
+    '日本語のテキスト、カタカナとひらがな。',
+    '東京都の天気は晴れです。',
+  ]),
+  'Chinese': _Lang('NotoSansSC-Regular.otf', <String>[
+    '中文简体：我们在北京学习汉语。',
+    '今天天气很好，欢迎光临！',
+  ]),
+  'Korean': _Lang('NotoSansKR-Regular.otf', <String>[
+    '한국어 문장입니다.',
+    '안녕하세요, 세계! 반갑습니다.',
+  ], pdfLibRender: false),
+  'Thai': _Lang('NotoSansThai-Regular.ttf', <String>[
+    'ภาษาไทยมีวรรณยุกต์ น้ำใจ ผู้ใหญ่',
+    'สวัสดีครับ ค่ำคืนนี้ทำอาหาร',
+  ], complex: true),
+  'Myanmar': _Lang('NotoSansMyanmar-Regular.ttf', <String>[
+    'မြန်မာဘာသာ မင်္ဂလာပါ',
+    'နေကောင်းလား ကျေးဇူးတင်ပါတယ်',
+  ], complex: true),
+  'Khmer': _Lang('NotoSansKhmer-Regular.ttf', <String>[
+    'ភាសាខ្មែរ សួស្តី ពិភពលោក',
+    'អរគុណច្រើន ស្រុកខ្មែរ',
+  ], complex: true),
+  'Arabic': _Lang('NotoSansArabic-Regular.ttf', <String>[
+    'مرحبا بالعالم',
+    'اللغة العربية جميلة',
+  ], complex: true),
+  'Arabic mixed': _Lang(
+    'IBMPlexSansArabic-Regular.ttf',
+    <String>[
+      'السعر: 1,250.50',
+      'مرحبا 123',
+      'Order 66 وصل 2024-05-01',
+      'Hello there, friend مرحبا world',
+    ],
+    complex: true,
+    mixed: true,
+  ),
+  'Hebrew': _Lang(
+    'IBMPlexSansHebrew-Regular.ttf',
+    <String>['שלום עולם 2024', 'המחיר: 1,250.50 ₪', 'Hello שלום world'],
+    complex: true,
+    mixed: true,
+  ),
+  'Hindi': _Lang('NotoSansDevanagari-Regular.ttf', <String>[
+    'हिन्दी भाषा में नमस्ते',
+    'क्षत्रिय विद्यालय दुनिया',
+  ], complex: true),
+};
+
+/// The lines, then the lines as one wrapped paragraph. The same as
+/// languages.mjs. A complex script wraps at any cluster (`''`), the others
+/// at spaces, like pdf-lib.
+Future<Uint8List> _draw(_Lang lang, bool subset) async {
+  PDFDocument doc = await PDFDocument.create();
+  PDFFont f = await doc.embedFont(testFont(lang.font), subset: subset);
+  PDFPage page = doc.addPage(<double>[500, 500]);
+  double y = 460;
+  for (String t in lang.lines) {
+    page.drawText(t, x: 20, y: y, size: 16, font: f);
+    y -= 30;
+  }
+  page.drawText(
+    lang.lines.join(' '),
+    x: 20,
+    y: y,
+    size: 14,
+    font: f,
+    maxWidth: 150,
+    lineHeight: 22,
+    wordBreaks: lang.complex ? <String>[''] : null,
+  );
+  return doc.save();
+}
+
+/// units per em, from the `head` table
+int _upem(Uint8List font) {
+  ByteData d = ByteData.sublistView(font);
+  for (int i = 0; i < d.getUint16(4); i++) {
+    int rec = 12 + i * 16;
+    if (ascii.decode(font.sublist(rec, rec + 4)) == 'head') {
+      return d.getUint16(d.getUint32(rec + 8) + 18);
+    }
+  }
+  throw StateError('no head table');
+}
+
+/// hb-shape's glyphs (hex, like encodeText) and the sum of the advances.
+(String, int) _hbShape(
+  String font,
+  String text, {
+  String? script,
+  String? direction,
+}) {
+  ProcessResult r = Process.runSync('hb-shape', <String>[
+    '--output-format=json',
+    '--no-glyph-names',
+    if (script != null) '--script=$script',
+    if (direction != null) '--direction=$direction',
+    '$testFontDir/$font',
+    '-u',
+    text.runes.map((int c) => 'U+${c.toRadixString(16)}').join(','),
+  ]);
+  expect(r.exitCode, 0, reason: '${r.stderr}');
+  List<Object?> glyphs = jsonDecode(r.stdout as String) as List<Object?>;
+  String hex = glyphs
+      .map((Object? g) => ((g! as Map<String, Object?>)['g']! as int))
+      .map((int g) => g.toRadixString(16).toUpperCase().padLeft(4, '0'))
+      .join();
+  int advance = glyphs.fold(
+    0,
+    (int a, Object? g) => a + ((g! as Map<String, Object?>)['ax']! as int),
+  );
+  return ('<$hex>', advance);
+}
+
+/// The glyph ids of `<hex>`, 4 digits each.
+List<String> _ids(String hex) => <String>[
+  for (int i = 1; i + 4 < hex.length; i += 4) hex.substring(i, i + 4),
+];
+
+final RegExp _mark = RegExp(r'^\p{M}', unicode: true);
+
+String _noSpace(String s) => s.replaceAll(RegExp(r'\s'), '');
+
+final RegExp _rtl = RegExp('[\u0590-\u08FF]');
+
+/// The OpenType script of the letters of `word`, if it has letters.
+String? _script(String word) {
+  if (RegExp('[\u0600-\u06FF]').hasMatch(word)) return 'arab';
+  if (RegExp('[\u0590-\u05FF]').hasMatch(word)) return 'hebr';
+  if (RegExp('[A-Za-z]').hasMatch(word)) return 'latn';
+  return null;
+}
+
+/// The words of a mixed line: runs of Arabic, Hebrew or Latin letters (with
+/// their marks), or of digits with `.,`. Viewers place the neutral marks
+/// (`:`, `₪`, `-`) of a mixed line by their own rules (a date after an
+/// Arabic word is drawn right to left by the bidi rules, `01-05-2024`), and
+/// pdftotext drops the space where the direction changes, so only these
+/// words are compared, and all characters.
+List<String> _words(String line) =>
+    RegExp(r'[\u0600-\u06FF]+|[\u0590-\u05FF]+|[A-Za-z]+|[0-9][0-9.,]*')
+        .allMatches(line)
+        .map((Match m) => m[0]!)
+        .toList();
+
+void main() {
+  late Directory tmp;
+  late bool fonts;
+  late Map<String, Object?> theirs;
+  bool ready = hasNode && hasPdftoppm && hasPdftotext && _tool('hb-shape');
+  String skip = 'needs npm ci in tool/crosscheck, poppler-utils and hb-shape';
+
+  setUpAll(() async {
+    tmp = Directory.systemTemp.createTempSync('dox_pdf_lang');
+    fonts = ready && await fetchTestFonts();
+    if (!fonts) return;
+    Map<String, Object?> simple = <String, Object?>{
+      for (MapEntry<String, _Lang> e in _langs.entries)
+        if (!e.value.complex)
+          e.key: <String, Object?>{
+            'font': e.value.font,
+            'lines': e.value.lines,
+          },
+    };
+    ProcessResult r = await Process.run('node', <String>[
+      '$crosscheckDir/languages.mjs',
+      tmp.path,
+      testFontDir,
+      jsonEncode(simple),
+    ]);
+    expect(r.exitCode, 0, reason: '${r.stderr}');
+    theirs = jsonDecode(r.stdout as String) as Map<String, Object?>;
+  });
+  tearDownAll(() => tmp.deleteSync(recursive: true));
+
+  for (MapEntry<String, _Lang> e in _langs.entries) {
+    String name = e.key;
+    _Lang lang = e.value;
+    for (bool subset in <bool>[false, true]) {
+      String mode = subset ? 'subset' : 'full';
+      String pdf() => '${tmp.path}/ours-$name-$mode.pdf';
+      Future<void> make() async {
+        if (!File(pdf()).existsSync()) {
+          File(pdf()).writeAsBytesSync(await _draw(lang, subset));
+        }
+      }
+
+      group('$name $mode', skip: ready ? false : skip, () {
+        test('copy and wrap', () async {
+          if (!fonts) return markTestSkipped('no test fonts');
+          await make();
+          List<String> got = (await pdfText(pdf()))
+              .split('\n')
+              // pdftotext marks right-to-left lines with bidi controls
+              .map(
+                (String l) =>
+                    l.replaceAll(RegExp('[\u202A-\u202E]'), '').trim(),
+              )
+              .where((String l) => l.isNotEmpty)
+              .toList();
+          if (lang.mixed) {
+            for (int i = 0; i < lang.lines.length; i++) {
+              String line = lang.lines[i];
+              expect(
+                _words(got[i])..sort(),
+                _words(line)..sort(),
+                reason: line,
+              );
+              expect(
+                _noSpace(got[i]).split('')..sort(),
+                _noSpace(line).split('')..sort(),
+                reason: line,
+              );
+            }
+          } else {
+            expect(got.take(lang.lines.length), lang.lines);
+          }
+          List<String> wrapped = got.skip(lang.lines.length).toList();
+          expect(wrapped.length, greaterThan(1), reason: 'the text wraps');
+          if (lang.mixed) {
+            expect(
+              _noSpace(wrapped.join()).split('')..sort(),
+              _noSpace(lang.lines.join()).split('')..sort(),
+            );
+          } else {
+            expect(_noSpace(wrapped.join()), _noSpace(lang.lines.join()));
+          }
+          for (String l in wrapped) {
+            expect(
+              _mark.hasMatch(l),
+              isFalse,
+              reason: 'a line starts with a mark: $l',
+            );
+          }
+        });
+
+        test('render', () async {
+          if (!fonts) return markTestSkipped('no test fonts');
+          await make();
+          if (!lang.complex && lang.pdfLibRender) {
+            await sameRender(pdf(), '${tmp.path}/theirs-$name.pdf', 1);
+            return;
+          }
+          List<Ppm> pages = await render(pdf(), '${pdf()}.png');
+          int dark = 0;
+          for (int i = 0; i < pages[0].pixels.length; i += 3) {
+            if (pages[0].pixels[i] < 128) dark++;
+          }
+          expect(dark, greaterThan(200), reason: 'the page is not blank');
+          PDFDocument doc = await PDFDocument.create();
+          PDFFont f = await doc.embedFont(testFont(lang.font));
+          for (String t in lang.lines) {
+            String hex = f.encodeText(t).toString();
+            expect(
+              RegExp('.{4}')
+                  .allMatches(hex.substring(1, hex.length - 1))
+                  .map((Match m) => m[0]),
+              isNot(contains('0000')),
+              reason: 'no .notdef in $t',
+            );
+          }
+        });
+
+        test('width', () async {
+          if (!fonts) return markTestSkipped('no test fonts');
+          PDFDocument doc = await PDFDocument.create();
+          Uint8List bytes = testFont(lang.font);
+          PDFFont f = await doc.embedFont(bytes, subset: subset);
+          if (!lang.complex) {
+            expect(<double>[
+              for (String t in lang.lines) f.widthOfTextAtSize(t, 16),
+            ], theirs[name]);
+            return;
+          }
+          int upem = _upem(bytes);
+          for (String t in lang.lines) {
+            var (String hex, int advance) = _hbShape(lang.font, t);
+            if (lang.mixed) {
+              // word by word, and the glyphs in any order
+              List<String> parts = t.split(RegExp('(?= )|(?<= )'));
+              List<String> ids = <String>[];
+              advance = 0;
+              for (int i = 0; i < parts.length; i++) {
+                String w = parts[i];
+                // a word with no letters (a number) takes the script of
+                // the word before it, else after it, like the layout
+                String? script =
+                    _script(w) ??
+                    parts
+                        .take(i)
+                        .toList()
+                        .reversed
+                        .map(_script)
+                        .nonNulls
+                        .firstOrNull ??
+                    parts.skip(i + 1).map(_script).nonNulls.firstOrNull;
+                var (String h, int a) = _hbShape(
+                  lang.font,
+                  w,
+                  script: script,
+                  direction: _rtl.hasMatch(w) ? 'rtl' : 'ltr',
+                );
+                ids.addAll(_ids(h));
+                advance += a;
+              }
+              if (!subset) {
+                expect(
+                  _ids(f.encodeText(t).toString())..sort(),
+                  ids..sort(),
+                  reason: t,
+                );
+              }
+            } else if (!subset) {
+              expect(f.encodeText(t).toString(), hex, reason: t);
+            }
+            expect(
+              f.widthOfTextAtSize(t, 16),
+              closeTo(advance * 16 / upem, 1e-9),
+              reason: t,
+            );
+          }
+        });
+      });
+    }
+  }
+
+  // A wrapped line keeps the bidi direction of its paragraph. The reference
+  // draws each line alone, with a mark (LRM / RLM) that sets that
+  // direction; the pages must render the same.
+  group('bidi paragraphs', skip: ready ? false : skip, () {
+    const String font = 'IBMPlexSansArabic-Regular.ttf';
+    const double size = 16;
+
+    Future<void> same(
+      String name,
+      void Function(PDFDocument doc, PDFPage page, PDFFont f) wrapped,
+      void Function(PDFDocument doc, PDFPage page, PDFFont f) lines,
+    ) async {
+      List<String> files = <String>[];
+      for (void Function(PDFDocument, PDFPage, PDFFont) draw
+          in <void Function(PDFDocument, PDFPage, PDFFont)>[wrapped, lines]) {
+        PDFDocument doc = await PDFDocument.create();
+        PDFFont f = await doc.embedFont(testFont(font), subset: true);
+        PDFPage page = doc.addPage(<double>[400, 200]);
+        draw(doc, page, f);
+        String out = '${tmp.path}/bidi-$name-${files.length}.pdf';
+        File(out).writeAsBytesSync(await doc.save());
+        files.add(out);
+      }
+      await sameRender(files[0], files[1], 1);
+    }
+
+    /// `maxWidth` that puts `first` on line 1 and `second` on line 2.
+    double wrapAt(PDFFont f, String first, String second) {
+      double a = f.widthOfTextAtSize(first, size);
+      double b = f.widthOfTextAtSize(second, size);
+      double both = f.widthOfTextAtSize(first + second.split(' ').first, size);
+      double max = (a > b ? a : b) + 1;
+      expect(max, lessThan(both), reason: 'the test text wraps');
+      return max;
+    }
+
+    test(
+      'drawText: an English paragraph with a line that starts in Arabic',
+      () async {
+        if (!fonts) return markTestSkipped('no test fonts');
+        await same(
+          'ltr',
+          (PDFDocument d, PDFPage p, PDFFont f) => p.drawText(
+            'Hello there, friend مرحبا world',
+            x: 20,
+            y: 150,
+            size: size,
+            font: f,
+            lineHeight: 24,
+            maxWidth: wrapAt(f, 'Hello there, friend ', 'مرحبا world'),
+          ),
+          (PDFDocument d, PDFPage p, PDFFont f) => p.drawText(
+            'Hello there, friend \n\u200Eمرحبا world',
+            x: 20,
+            y: 150,
+            size: size,
+            font: f,
+            lineHeight: 24,
+          ),
+        );
+      },
+    );
+
+    test(
+      'drawText: an Arabic paragraph with a line that starts in Latin',
+      () async {
+        if (!fonts) return markTestSkipped('no test fonts');
+        await same(
+          'rtl',
+          (PDFDocument d, PDFPage p, PDFFont f) => p.drawText(
+            'السلام عليكم ورحمة Google هو',
+            x: 20,
+            y: 150,
+            size: size,
+            font: f,
+            lineHeight: 24,
+            maxWidth: wrapAt(f, 'السلام عليكم ورحمة ', 'Google هو'),
+          ),
+          (PDFDocument d, PDFPage p, PDFFont f) => p.drawText(
+            'السلام عليكم ورحمة \n\u200FGoogle هو',
+            x: 20,
+            y: 150,
+            size: size,
+            font: f,
+            lineHeight: 24,
+          ),
+        );
+      },
+    );
+
+    test('a multi-line Arabic form field', () async {
+      if (!fonts) return markTestSkipped('no test fonts');
+      void field(PDFDocument doc, PDFPage page, PDFFont f, String text) {
+        // wide enough for line 1, not for line 1 and the next word
+        double w = f.widthOfTextAtSize('السلام عليكم ورحمة', 14) + 8;
+        expect(
+          f.widthOfTextAtSize('السلام عليكم ورحمة Google', 14) + 4,
+          greaterThan(w),
+        );
+        PDFTextField t = doc.getForm().createTextField('f');
+        t.enableMultiline();
+        t.addToPage(page, x: 20, y: 60, width: w, height: 80, font: f);
+        t.setFontSize(14);
+        t.setText(text);
+        t.updateAppearances(f);
+        doc.getForm().flatten();
+      }
+
+      await same(
+        'form',
+        (PDFDocument d, PDFPage p, PDFFont f) =>
+            field(d, p, f, 'السلام عليكم ورحمة Google هو'),
+        // the mark has no width, so the field wraps at the same place
+        (PDFDocument d, PDFPage p, PDFFont f) =>
+            field(d, p, f, 'السلام عليكم ورحمة \u200FGoogle هو'),
+      );
+    });
+  });
+}
+
+bool _tool(String name) {
+  try {
+    return Process.runSync(name, <String>['--version']).exitCode == 0;
+  } on ProcessException {
+    return false;
+  }
+}

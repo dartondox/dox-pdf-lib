@@ -62,14 +62,16 @@ jobs:
         working-directory: tool/crosscheck
         run: npm ci
       # pdftoppm renders pages for the drawing and embed crosschecks;
-      # pdfdetach lists attachments
-      - name: Install poppler-utils
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      # pdfdetach lists attachments; pdftotext reads text back; hb-shape
+      # (HarfBuzz) for the language matrix (test/language_test.dart)
+      - name: Install poppler-utils and hb-shape
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils libharfbuzz-bin
       # the crosscheck must run here, not be skipped
       - name: Dart tests
         run: |
           test -d tool/crosscheck/node_modules/pdf-lib
           command -v pdftoppm
+          command -v hb-shape
           dart test --concurrency=4
 
   # every PR builds the 5 targets too, so a Windows break shows before a release

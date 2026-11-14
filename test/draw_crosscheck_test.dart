@@ -11,18 +11,9 @@ import 'dart:typed_data';
 import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 import 'package:test/test.dart';
 
-const String _dir = 'tool/crosscheck';
+import 'render_support.dart';
+
 const String _fixtures = 'test/fixtures';
-
-bool get _hasNode => Directory('$_dir/node_modules/pdf-lib').existsSync();
-
-bool get _hasPdftoppm {
-  try {
-    return Process.runSync('pdftoppm', <String>['-v']).exitCode == 0;
-  } on ProcessException {
-    return false;
-  }
-}
 
 /// Keep in sync with `samples` in draw.mjs.
 const Map<String, List<String>> _samples = <String, List<String>>{
@@ -277,102 +268,19 @@ Future<PDFDocument> _scene() async {
   return doc;
 }
 
-Object? _asDoubles(Object? v) => switch (v) {
-  num() => v.toDouble(),
-  List<Object?>() => v.map(_asDoubles).toList(),
-  Map<String, Object?>() => v.map(
-    (String k, Object? e) => MapEntry<String, Object?>(k, _asDoubles(e)),
-  ),
-  _ => v,
-};
-
-/// A PPM image (`P6`) from pdftoppm.
-class _Ppm {
-  _Ppm(Uint8List data) {
-    // header: P6 <w> <h> 255, each followed by one whitespace
-    int pos = 0;
-    List<int> values = <int>[];
-    while (values.length < 3) {
-      while (data[pos] <= 32) {
-        pos++;
-      }
-      if (data[pos] == 0x50) {
-        pos += 2; // "P6"
-        continue;
-      }
-      int start = pos;
-      while (data[pos] > 32) {
-        pos++;
-      }
-      values.add(int.parse(ascii.decode(data.sublist(start, pos))));
-    }
-    width = values[0];
-    height = values[1];
-    pixels = Uint8List.sublistView(data, pos + 1);
-  }
-
-  late final int width;
-  late final int height;
-  late final Uint8List pixels;
-}
-
-/// The pages of [pdf] as images, in a new folder [dir].
-Future<List<_Ppm>> _render(String pdf, String dir) async {
-  Directory(dir).createSync();
-  ProcessResult r = await Process.run('pdftoppm', <String>[
-    '-r',
-    '50',
-    pdf,
-    '$dir/p',
-  ]);
-  expect(r.exitCode, 0, reason: '${r.stderr}');
-  List<File> files = Directory(dir).listSync().whereType<File>().toList()
-    ..sort((File a, File b) => a.path.compareTo(b.path));
-  return <_Ppm>[for (File f in files) _Ppm(f.readAsBytesSync())];
-}
-
-/// Renders both files and expects the same pages.
-Future<void> _sameRender(String ours, String theirs, int pages) async {
-  List<_Ppm> a = await _render(ours, '$ours.png');
-  List<_Ppm> b = await _render(theirs, '$theirs.png');
-  expect(a.length, pages);
-  expect(b.length, pages);
-  for (int page = 0; page < pages; page++) {
-    expect((a[page].width, a[page].height), (b[page].width, b[page].height));
-    int differ = 0;
-    Uint8List x = a[page].pixels;
-    Uint8List y = b[page].pixels;
-    for (int i = 0; i < x.length; i += 3) {
-      int d = 0;
-      for (int c = 0; c < 3; c++) {
-        int v = (x[i + c] - y[i + c]).abs();
-        if (v > d) d = v;
-      }
-      if (d > 40) differ++;
-    }
-    // the same operators render the same; allow a few edge pixels that
-    // float rounding may move
-    expect(
-      differ,
-      lessThanOrEqualTo(20),
-      reason: '$ours page ${page + 1}: $differ of ${x.length ~/ 3} differ',
-    );
-  }
-}
-
 void main() {
   late Directory tmp;
   setUpAll(() => tmp = Directory.systemTemp.createTempSync('dox_pdf_draw'));
   tearDownAll(() => tmp.deleteSync(recursive: true));
 
-  bool ready = _hasNode && _hasPdftoppm;
+  bool ready = hasNode && hasPdftoppm;
   String skip = 'needs npm ci in tool/crosscheck and pdftoppm (poppler-utils)';
 
   test(
     'drawing renders like pdf-lib, and font metrics match exactly',
     () async {
       ProcessResult r = await Process.run('node', <String>[
-        '$_dir/draw.mjs',
+        '$crosscheckDir/draw.mjs',
         tmp.path,
         _fixtures,
       ]);
@@ -381,13 +289,13 @@ void main() {
       PDFDocument doc = await _scene();
       // compared as numbers, so 0 and 0.0 are the same
       expect(
-        _asDoubles(jsonDecode(jsonEncode(_metrics(doc)))),
-        _asDoubles(jsonDecode(r.stdout as String)),
+        asDoubles(jsonDecode(jsonEncode(_metrics(doc)))),
+        asDoubles(jsonDecode(r.stdout as String)),
         reason: 'font metrics',
       );
       String ours = '${tmp.path}/ours.pdf';
       File(ours).writeAsBytesSync(await doc.save());
-      await _sameRender(ours, '${tmp.path}/theirs.pdf', 3);
+      await sameRender(ours, '${tmp.path}/theirs.pdf', 3);
 
       // drawing on a loaded page: the old content is wrapped in q/Q, so its
       // open transform does not change the new drawing
@@ -399,7 +307,7 @@ void main() {
         ..drawCircle(x: 150, y: 150, size: 50, color: rgb(1, 0, 0));
       String oursLoaded = '${tmp.path}/ours-loaded.pdf';
       File(oursLoaded).writeAsBytesSync(await loaded.save());
-      await _sameRender(oursLoaded, '${tmp.path}/theirs-loaded.pdf', 1);
+      await sameRender(oursLoaded, '${tmp.path}/theirs-loaded.pdf', 1);
     },
     skip: ready ? false : skip,
   );
