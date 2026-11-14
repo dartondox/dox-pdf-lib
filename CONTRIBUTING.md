@@ -1,0 +1,76 @@
+# Contributing to dox_pdf_lib
+
+Thank you for your help.
+
+## Bugs and feature requests
+
+Use GitHub issues: https://github.com/dartondox/dox-pdf-lib/issues
+
+For security problems, see [SECURITY.md](SECURITY.md). Do not open a public issue.
+
+## Pull requests
+
+Send changes as pull requests against `main`. Before you ask for review:
+
+- CI is green.
+- In `native/`: `cargo fmt`, `cargo clippy --release --all-targets -- -D warnings` and `cargo test` pass.
+- `dart format` is clean.
+- `dart analyze --fatal-infos` has no warnings.
+- Add a changelog entry under `## Unreleased` in `CHANGELOG.md`.
+- Do not change versions in the PR.
+
+## Goal
+
+The same API, names, defaults and behavior as pdf-lib. When you add a
+feature, read the pdf-lib source of it first and match it.
+
+## Native layout
+
+The rules below keep the code fast, and let features be built in parallel
+without merge conflicts.
+
+**One file per feature area.**
+
+- Rust: `native/src/<area>.rs`. Now: `ffi_util.rs`, `document.rs`, `page.rs`, `metadata.rs`. Later eg. `draw.rs`, `font.rs`, `image.rs`, `form.rs`, `attachment.rs`, `embed.rs`.
+- Dart bindings: `lib/src/ffi/<area>_bindings.dart`.
+- Dart API: `lib/src/api/<area>.dart`. Code that needs the private parts of `PDFDocument` or `PDFPage` (eg. the handle) is a `part of 'document.dart'`, often an `extension` on `PDFDocument` or `PDFPage` (see `metadata.dart`).
+- `native/src/lib.rs`, the `part` list in `lib/src/api/document.dart` and `lib/dox_pdf_lib.dart` are short lists. A new area adds one line to each.
+
+**The document lives in Rust.**
+
+- Dart holds an opaque handle (`Pointer<Void>`, an `Arc<Mutex<Doc>>` in Rust) with a `NativeFinalizer` (`dox_pdf_doc_free`), and an explicit `dispose()`.
+- New state of a feature (eg. fonts to embed at save) goes into `Doc` in `ffi_util.rs`. Keep `Doc` `Clone`: a later in-memory copy of a loaded document (load a template once, make many outputs) is a clone under the lock, with no parse.
+- A `PDFPage` is the document and the page object ref (`number << 16 | generation`).
+
+**One FFI call per API call.**
+
+- No chatty calls per object. Do the whole API call in Rust.
+- Bytes cross FFI once on load and once on save.
+- Small inputs and outputs use typed data (`Uint8List.address`, `Int64List.address`, `Float64List.address`) in leaf calls. No malloc in Dart.
+- Bytes from Rust (a saved file, a string) are a `Bytes` record. Dart wraps them with `takeBytes` as a `Uint8List` whose finalizer frees them. There is no copy and no free call.
+
+**Errors.**
+
+- Every export returns an `i32` status: `OK` (0), `PENDING` (1) or an error code (`ffi_util.rs`, the same numbers in `ffi_util.dart`).
+- Every export runs in `ffi_util::call`, which catches panics (`catch_unwind`). A panic never crosses FFI. The release profile uses `panic = "unwind"` for this. Do not change it to `abort`.
+- On an error, the message is in a thread-local slot. `check()` in Dart reads it with `dox_pdf_last_error` right away, in the same synchronous code (so on the same thread).
+- Dart throws typed errors with pdf-lib names (`EncryptedPDFError`, `RemovePageFromEmptyDocumentError`, ...). Add a new status and a new class in `lib/src/api/errors.dart` when you need one.
+
+**Work that can be slow.**
+
+- Load and save of a big file (1 MiB or more, `ASYNC_THRESHOLD`) run on a Rust thread. The export returns `PENDING`, and the thread reports with a callback (`NativeCallable.listener`, see `Pending` in `ffi_util.dart`). Small files run inline, because a thread costs more than the work.
+- A Rust thread is cheaper than `Isolate.run` (tens of microseconds, not about a millisecond), and the bytes do not have to go to another isolate.
+- Calls on one document wait for each other (a mutex). Save copies the document under the lock (`Doc` is `Clone`) and writes the copy without it, so other calls do not wait for a big save. Do the same for other slow work that only reads the document.
+
+**Untrusted input.**
+
+- Load must never crash the process on a broken PDF. It returns an error.
+- Walks over the object graph have a limit (`MAX_DEPTH`) and skip loops. Use explicit stacks, not deep recursion.
+
+## Tests
+
+Every new feature and every bug fix must add tests.
+
+- Rust: `cargo test` in `native/`.
+- Dart: `dart test`.
+- Crosscheck with pdf-lib: run `npm ci` in `tool/crosscheck` (needs Node.js). Then `dart test test/crosscheck_test.dart` compares what dox_pdf_lib and pdf-lib read from the same files. Without `node_modules` the test is skipped. CI always runs it.

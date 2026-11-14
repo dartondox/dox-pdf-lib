@@ -1,0 +1,9 @@
+{
+  "name": "dox-pdf-lib-crosscheck",
+  "private": true,
+  "type": "module",
+  "description": "Reads PDFs with pdf-lib, so the Dart tests can compare. See test/crosscheck_test.dart.",
+  "dependencies": {
+    "pdf-lib": "1.17.1"
+  }
+}
