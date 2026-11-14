@@ -5,7 +5,8 @@ library;
 // The drawing API, for your own plugins.
 export 'package:dox_pdf_lib/dox_pdf_lib.dart';
 
-export 'src/barcodes/barcode_plugin.dart' show BarcodePlugin, barcodeTypes;
+export 'src/barcodes/barcode_plugin.dart'
+    show BarcodeInputException, BarcodePlugin, barcodeTypes;
 export 'src/fonts/font_store.dart' show FontSource, FontStore;
 export 'src/generate.dart' show generate;
 export 'src/layout.dart' show PdfLayout, Point, rotatePoint;

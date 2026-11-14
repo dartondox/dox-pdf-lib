@@ -37,9 +37,6 @@ const plugins = {
   table: schemas.table,
 };
 
-// CROSSCHECK_ONLY=a,b renders only the cases with these names.
-const only = process.env.CROSSCHECK_ONLY?.split(',');
-
 function readFile(name) {
   for (const dir of fileDirs) {
     const path = join(dir, name);
@@ -63,8 +60,6 @@ function resolve(value) {
 
 writeFileSync(join(outDir, 'cases.json'), JSON.stringify(cases, null, 1));
 for (const c of cases) {
-  // a name that ends with * is a prefix
-  if (only && !only.some((o) => (o.endsWith('*') ? c.name.startsWith(o.slice(0, -1)) : o === c.name))) continue;
   const pdf = await generate({
     template: resolve(c.template),
     inputs: resolve(c.inputs),

@@ -338,6 +338,13 @@ dox_pdf_lib works in Dart programs on macOS, Linux and Windows.
 It uses `dart:ffi`, so it does not work on the web.
 Android and iOS are not supported yet.
 
+**Do you need iOS or Android?** Give a 👍 or a comment on the issue for your platform:
+
+- iOS: [issue #18](https://github.com/dartondox/dox-pdf-lib/issues/18)
+- Android: [issue #19](https://github.com/dartondox/dox-pdf-lib/issues/19)
+
+When an issue has requests from 50 users, we add support for that platform.
+
 Ready-built native libraries exist for:
 
 | System | CPU |

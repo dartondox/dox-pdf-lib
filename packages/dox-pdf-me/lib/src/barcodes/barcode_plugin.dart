@@ -11,12 +11,15 @@ import 'barcode_validator.dart';
 import 'linear_symbols.dart';
 import 'matrix_symbols.dart';
 
-export 'barcode_validator.dart' show barcodeTypes, validateBarcodeInput;
+export 'barcode_validator.dart'
+    show BarcodeInputException, barcodeTypes, validateBarcodeInput;
 
 /// A pdfme barcode schema type (one of [barcodeTypes]), drawn as vectors.
 ///
 /// Like pdfme's barcode `pdfRender`: a value that is not valid for the
-/// type draws nothing. The background fills the whole box. 1D barcodes
+/// type draws nothing. A value that passes that check but that bwip-js can
+/// not encode throws a [BarcodeInputException] with the bwip-js message,
+/// so `generate` fails like in pdfme. The background fills the whole box. 1D barcodes
 /// are stretched to the box; QR code, GS1 Data Matrix and PDF417 keep
 /// their ratio and are centered ("contain"). There is no quiet zone.
 ///

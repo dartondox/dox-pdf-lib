@@ -196,6 +196,12 @@ schemas below it move down, and the table goes on over new pages (pdfme's
 dynamic layout). On a PDF base, the table draws its full height on the
 same page, like pdfme.
 
+Barcodes: a value that pdfme's check refuses (eg. a bad EAN-13 check digit)
+draws nothing, like in pdfme. A value that passes that check but that
+bwip-js can not encode makes `generate` throw a `BarcodeInputException`
+with the bwip-js message, like pdfme's `generate` fails. Eg. GS1 data that
+breaks the GS1 rules: `bwipp.GS1valueTooLong#3845: AI 10: Too long`.
+
 ### multiVariableText
 
 The schema has a `text` with `{name}` variables and a `variables` list of
@@ -264,15 +270,12 @@ await generate(
 This list compares with pdfme 6.2.8.
 
 - **Barcodes are vectors.** pdfme draws barcodes with bwip-js. This package
-  draws them as vector shapes with the `barcode` package. The bars of EAN-13,
-  EAN-8, UPC-A, UPC-E, Code 39, NW-7, ITF-14 and Japan Post are in the same
-  places. PDF417 has the same modules as bwip-js (same codewords, columns
-  and rows). Small differences:
-  - The text under the bars uses Helvetica, not OCR-B. It has the same place
-    and size.
-  - QR codes can use another mask. The size, place and data are the same,
-    and scanners read them.
-  - Code 128 can pick other code sets for some texts. The data is the same.
+  draws them as vector shapes, with the same bars and modules as bwip-js:
+  the same places for the bars of all linear types, the same code sets for
+  Code 128, and the same modules for QR code, Data Matrix and PDF417
+  (same segments, version, error correction level and mask). One small
+  difference: the text under the bars uses Helvetica, not OCR-B. It has the
+  same place and size.
 - **SVG:** `fill-rule="evenodd"` fills like `nonzero`.
 - **Complex scripts** (Thai, Arabic, Hindi, ...) are drawn with HarfBuzz
   rules (see dox_pdf_lib). Mark positions can be a little different. For
@@ -283,10 +286,10 @@ This list compares with pdfme 6.2.8.
 - **Missing letters** in a font: their width is the real width of the empty
   box glyph. pdfme gives them no width in the PDF, so a viewer draws them
   wider than pdfme measured.
-- **Date formats:** month and day names are English for every locale. Most
-  date-fns tokens work (`yyyy`, `MM`, `MMMM`, `dd`, `EEEE`, `HH`, `hh`, `mm`,
-  `ss`, `aa`, ...). A format with other tokens falls back to the default
-  format.
+- **Date formats:** all date-fns tokens work (`yyyy`, `MMMM`, `do`, `EEEE`,
+  `HH`, `aa`, `PPP`, `p`, `Q`, `w`, ...). Month and day names and the long
+  formats (`P`, `p`) are English for every locale, and weeks start on
+  Sunday (`w`, `e`, `c`, `Y`).
 - **Read-only text:** `{...}` placeholders support names and dotted paths,
   like `{name}`, `{order.id}`, `{currentPage}`, `{totalPages}`, `{date}` and
   `{dateTime}`. pdfme also runs JavaScript expressions, like `{price * 2}`.
@@ -315,11 +318,15 @@ dox_pdf_me runs where dox_pdf_lib runs: Dart programs on macOS, Linux and
 Windows. It does not work on the web. Android and iOS are not supported yet.
 See the [dox_pdf_lib platforms](https://pub.dev/packages/dox_pdf_lib#platforms).
 
+Need iOS or Android? Give a 👍 on [issue #18 (iOS)](https://github.com/dartondox/dox-pdf-lib/issues/18)
+or [issue #19 (Android)](https://github.com/dartondox/dox-pdf-lib/issues/19). When an
+issue has requests from 50 users, we add support for that platform.
+
 ## Thanks and licenses
 
 The behavior comes from [pdfme](https://github.com/pdfme/pdfme) (MIT) by
 Kyohei Fukuda and the pdfme contributors. The line break tables come from
-pdfme and the Unicode Character Database. The PDF417 encoder is a port of
+pdfme and the Unicode Character Database. The PDF417, QR code, Data Matrix and Code 128 encoders are ports of
 [BWIPP](https://github.com/bwipp/postscriptbarcode) (MIT) by Terry Burton,
 which bwip-js uses. See
 [lib/src/barcodes/BWIPP-LICENSE.txt](lib/src/barcodes/BWIPP-LICENSE.txt).

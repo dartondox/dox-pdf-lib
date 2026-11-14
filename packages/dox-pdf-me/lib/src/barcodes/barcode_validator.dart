@@ -83,3 +83,32 @@ String gtinCheckDigit(String body) {
   String check = '${10 - sum % 10}';
   return check.substring(check.length - 1);
 }
+
+/// A value that passes pdfme's check, but that bwip-js can not encode.
+/// pdfme does not catch the bwip-js error, so `generate` fails with it.
+/// [message] is the message of that error, eg.
+/// `bwipp.GS1valueTooLong#3845: AI 10: Too long`.
+class BarcodeInputException implements Exception {
+  const BarcodeInputException(this.message);
+
+  /// A bwip-js error: its name (with the BWIPP line) and its info.
+  const BarcodeInputException.bwipp(String name, String info)
+    : message = 'bwipp.$name: $info';
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+final RegExp _loneSurrogate = RegExp(
+  r'[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]',
+);
+
+/// bwip-js turns text with non-ASCII letters into UTF-8 with
+/// `encodeURIComponent`, which throws `URI malformed` for a lone surrogate.
+void checkBwipText(String value) {
+  if (_loneSurrogate.hasMatch(value)) {
+    throw const BarcodeInputException('URI malformed');
+  }
+}

@@ -38,12 +38,16 @@ class BarcodePainter {
     if (symbol.width <= 0 || symbol.height <= 0) return;
     double sx = width / symbol.width;
     double sy = height / symbol.height;
-    if (symbol.rects.isNotEmpty) {
+    for ((List<BarcodeRect>, Color) part in <(List<BarcodeRect>, Color)>[
+      (symbol.rects, barColor),
+      (symbol.border, const RGB(0, 0, 0)),
+    ]) {
+      if (part.$1.isEmpty) continue;
       page.drawSvgPath(
-        rectsPath(symbol.rects, sx, sy),
+        rectsPath(part.$1, sx, sy),
         x: left,
         y: top,
-        color: barColor,
+        color: part.$2,
         opacity: opacity,
       );
     }

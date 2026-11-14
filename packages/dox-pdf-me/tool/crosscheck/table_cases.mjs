@@ -1,9 +1,10 @@
 // Table cases of the crosscheck. cases.mjs adds them to the other cases.
 //
-// `boxes` lists areas (mm) per page: test/table_crosscheck_test.dart
+// A table grows and goes on over pages, so its template box is not where
+// it is drawn. `boxes` lists areas (mm) per page: test/crosscheck_test.dart
 // compares each area alone (pixels and the box around the ink), so a small
 // shift inside a table is not hidden by the white rest of the page. It
-// always compares the whole page too.
+// compares the whole page as one area too.
 
 const blank = (extra = {}) => ({ width: 150, height: 100, padding: [10, 10, 10, 10], ...extra });
 

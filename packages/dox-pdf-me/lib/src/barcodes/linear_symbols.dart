@@ -5,6 +5,7 @@ import 'package:barcode/barcode.dart';
 import 'barcode_symbol.dart';
 import 'barcode_validator.dart';
 import 'bwip_raster.dart';
+import 'code128_encoder.dart';
 import 'japan_post.dart';
 
 /// A bar or a space of a linear barcode, in modules.
@@ -24,8 +25,9 @@ class LinearSymbolBuilder {
   static const double guardExtension = 5;
 
   /// The barcode of [type] for [value] in a box of [widthMm] x [heightMm],
-  /// or null when the value can not be encoded (pdfme would get an error
-  /// from bwip-js; we draw nothing).
+  /// or null when [value] is empty or [type] is not linear. Throws a
+  /// [BarcodeInputException] where bwip-js throws (pdfme's `generate`
+  /// fails then too).
   static BarcodeSymbol? build(
     String type,
     String value, {
@@ -33,21 +35,17 @@ class LinearSymbolBuilder {
     required double heightMm,
     required bool includeText,
   }) {
+    if (value.isEmpty) return null;
+    checkBwipText(value);
     _Layout l = _Layout(widthMm, heightMm / 25.4 * 72, includeText);
     try {
       return switch (type) {
         'ean13' => _ean(l, Barcode.ean13(), value, _ean13Guards),
         'ean8' => _ean(l, Barcode.ean8(), value, _ean8Guards),
         'upca' => _ean(l, Barcode.upcA(), value, _upcaGuards),
-        'upce' => _ean(l, Barcode.upcE(), value, _upceGuards),
-        'code39' => l.runs(
-          moduleRuns(Barcode.code39(), value, wideToThree: true),
-          '*$value*',
-        ),
-        'code128' => l.runs(
-          moduleRuns(Barcode.code128(), value),
-          _printable(value),
-        ),
+        'upce' => _upce(l, value),
+        'code39' => _code39(l, value),
+        'code128' => _code128(l, value),
         'nw7' => _nw7(l, value),
         'itf14' => _itf14(l, value),
         'japanpost' => _japanPost(l, value),
@@ -74,7 +72,6 @@ class LinearSymbolBuilder {
     (45, 50),
     (85, 95),
   ];
-  static const List<(int, int)> _upceGuards = <(int, int)>[(0, 3), (45, 51)];
 
   /// The bars and spaces of [barcode] for [data], from the `barcode`
   /// package. Spaces at both ends are dropped. With [wideToThree], wide
@@ -108,6 +105,19 @@ class LinearSymbolBuilder {
     return runs;
   }
 
+  /// Code 128 with our port of the BWIPP encoder, so the code sets are the
+  /// same as in bwip-js.
+  static BarcodeSymbol? _code128(_Layout l, String value) {
+    List<int> widths = Code128Encoder.widths(value);
+    List<ModuleRun> runs = <ModuleRun>[];
+    int start = 0;
+    for (int i = 0; i < widths.length; i++) {
+      runs.add((start: start, length: widths[i], dark: i.isEven));
+      start += widths[i];
+    }
+    return l.runs(runs, _printable(value));
+  }
+
   /// EAN and UPC: with text, the guard bars go 5 pt lower.
   static BarcodeSymbol _ean(
     _Layout l,
@@ -129,9 +139,94 @@ class LinearSymbolBuilder {
     );
   }
 
+  /// Code 39. pdfme lets any white space through; BWIPP takes only spaces.
+  static BarcodeSymbol _code39(_Layout l, String value) {
+    if (!_code39Chars.hasMatch(value)) {
+      throw const BarcodeInputException.bwipp(
+        'code39badCharacter#10257',
+        'Code 39 must contain only digits, capital letters, spaces and the '
+            r'symbols -.$/+%',
+      );
+    }
+    return l.runs(
+      moduleRuns(Barcode.code39(), value, wideToThree: true),
+      '*$value*',
+    );
+  }
+
+  static final RegExp _code39Chars = RegExp(r'^[0-9A-Z \-.$/+%]*$');
+
+  /// UPC-E like BWIPP: the check digit comes from the UPC-A the code
+  /// stands for. (The `barcode` package got it wrong for some codes, like
+  /// 0481683.)
+  static BarcodeSymbol _upce(_Layout l, String value) {
+    (List<int>, int) upce = upceWidths(value);
+    List<ModuleRun> runs = <ModuleRun>[];
+    int start = 0;
+    // bars and spaces take turns, starting with the bar of the start guard
+    for (int i = 0; i < upce.$1.length; i++) {
+      runs.add((start: start, length: upce.$1[i], dark: i.isEven));
+      start += upce.$1[i];
+    }
+    return l.runs(
+      runs,
+      '${value.substring(0, 7)}${upce.$2}',
+      longer: l.includeText ? (int m) => m < 3 || m >= 45 : null,
+    );
+  }
+
+  /// The bar and space widths of the UPC-E [value] (7 or 8 digits, number
+  /// system 0) and its check digit. A wrong check digit throws, like
+  /// bwip-js.
+  static (List<int>, int) upceWidths(String value) {
+    List<int> d = value.codeUnits.map((int c) => c - 48).toList();
+    // the UPC-A of the 6 digits after the number system
+    List<int> upca = switch (d[6]) {
+      <= 2 => <int>[...d.sublist(0, 3), d[6], 0, 0, 0, 0, ...d.sublist(3, 6)],
+      3 => <int>[...d.sublist(0, 4), 0, 0, 0, 0, 0, d[4], d[5]],
+      4 => <int>[...d.sublist(0, 5), 0, 0, 0, 0, 0, d[5]],
+      _ => <int>[...d.sublist(0, 6), 0, 0, 0, 0, d[6]],
+    };
+    int sum = 0;
+    for (int i = 0; i < 11; i++) {
+      sum += upca[i] * (i.isOdd ? 1 : 3);
+    }
+    int check = (10 - sum % 10) % 10;
+    if (d.length == 8 && d[7] != check) {
+      throw const BarcodeInputException.bwipp(
+        'upcEbadCheckDigit#7845',
+        'Incorrect UPC check digit provided',
+      );
+    }
+    String mirror = _upceMirrors[check];
+    List<int> widths = <int>[1, 1, 1];
+    for (int i = 1; i <= 6; i++) {
+      List<int> enc = _upceEncs[d[i]].codeUnits.map((int c) => c - 48).toList();
+      // a 1 in the map (inverted for number system 0): reversed digit
+      if ((mirror[i - 1] == '1') != (d[0] == 0)) enc = enc.reversed.toList();
+      widths.addAll(enc);
+    }
+    widths.addAll(<int>[1, 1, 1, 1, 1, 1]);
+    return (widths, check);
+  }
+
+  static const List<String> _upceEncs = <String>[
+    '3211', '2221', '2122', '1411', '1132', //
+    '1231', '1114', '1312', '1213', '3112',
+  ];
+  static const List<String> _upceMirrors = <String>[
+    '000111', '001011', '001101', '001110', '010011', //
+    '011001', '011100', '010101', '010110', '011010',
+  ];
+
   static BarcodeSymbol? _nw7(_Layout l, String value) {
     // BWIPP takes only capital start and stop letters
-    if (value != value.toUpperCase()) return null;
+    if (value != value.toUpperCase()) {
+      throw const BarcodeInputException.bwipp(
+        'rationalizedCodabarBadStartStop#15508',
+        'Codabar start and stop characters must be one of A B C or D',
+      );
+    }
     return l.runs(
       moduleRuns(
         Barcode.codabar(explicitStartStop: true),
@@ -161,8 +256,14 @@ class LinearSymbolBuilder {
 
   /// Japan Post: bars 1.44 wide, 1.872 apart, in four heights.
   static BarcodeSymbol? _japanPost(_Layout l, String value) {
-    List<JapanPostBar>? bars = JapanPostEncoder.encode(value);
-    if (bars == null) return null;
+    // the characters are checked before (validateBarcodeInput), so no bars
+    // means more than 20 characters after encoding
+    List<JapanPostBar> bars =
+        JapanPostEncoder.encode(value) ??
+        (throw const BarcodeInputException.bwipp(
+          'japanpostTooLong#17271',
+          'The input is too long',
+        ));
     double eighth = l.heightPt / 8;
     const double w = JapanPostEncoder.barWidth;
     return l.render(
