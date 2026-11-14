@@ -248,7 +248,8 @@ The behavior comes from [pdfme](https://github.com/pdfme/pdfme) (MIT) by
 Kyohei Fukuda and the pdfme contributors. The line break tables come from
 pdfme and the Unicode Character Database. The PDF417 encoder is a port of
 [BWIPP](https://github.com/bwipp/postscriptbarcode) (MIT) by Terry Burton,
-which bwip-js uses.
+which bwip-js uses. See
+[lib/src/barcodes/BWIPP-LICENSE.txt](lib/src/barcodes/BWIPP-LICENSE.txt).
 
 The package includes the **Roboto** font (Copyright 2011 Google Inc.), under
 the Apache License 2.0. See
