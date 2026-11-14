@@ -1,0 +1,12 @@
+name: dox_pdf_lib_workspace
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.0
+
+# Dart pub workspace: one `dart pub get` at the root links all packages
+# and writes one pubspec.lock. Each package has its own version and its
+# own release tag (<package>-v<version>).
+workspace:
+  - packages/dox-pdf-lib
+  - packages/dox-pdf-me

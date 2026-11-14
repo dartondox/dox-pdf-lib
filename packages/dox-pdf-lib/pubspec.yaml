@@ -5,6 +5,7 @@ repository: https://github.com/dartondox/dox-pdf-lib
 
 environment:
   sdk: ^3.13.0
+resolution: workspace
 
 dependencies:
   code_assets: ^2.2.0

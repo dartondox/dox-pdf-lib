@@ -1,0 +1,17 @@
+name: dox_pdf_me
+description: Make PDF documents in Dart on top of dox_pdf_lib. Work in progress.
+version: 0.0.1
+repository: https://github.com/dartondox/dox-pdf-lib
+
+environment:
+  sdk: ^3.13.0
+resolution: workspace
+
+dependencies:
+  barcode: ^2.2.9
+  # In this workspace.
+  dox_pdf_lib: ^0.0.1
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.33.0

@@ -38,8 +38,8 @@ const int _attempts = 3;
 const List<int> _waitSeconds = <int>[1, 3];
 
 /// sha256 of each release asset. The release workflow
-/// (.github/workflows/ci.yaml) fills it from `SHA256SUMS` of the release:
-/// `dart run tool/native_hashes.dart v<version>`
+/// (.github/workflows/release.yaml) fills it from `SHA256SUMS` of the
+/// release: `dart run tool/native_hashes.dart dox_pdf_lib-v<version>`
 const Map<String, String> _sha256 = <String, String>{
   'dox_pdf_lib-linux-arm64.so':
       '213e214f7f1ffdbd814f3d6da27e60222950e97e8a318219cb9669bddf9b8bbc',
@@ -122,7 +122,7 @@ Future<Uri?> _download(
   String? hash = _sha256[asset];
   if (hash == null) return null; // no release for this platform (yet)
 
-  // the release tag has the package version, eg. v0.0.1
+  // the release tag has the package name and version, eg. dox_pdf_lib-v0.0.2
   String pubspec = File.fromUri(input.packageRoot.resolve('pubspec.yaml'))
       .readAsStringSync();
   String version = RegExp(
@@ -146,7 +146,7 @@ Future<Uri?> _download(
       ..connectionTimeout = const Duration(seconds: 30);
     try {
       HttpClientRequest req = await client
-          .getUrl(Uri.parse('$_releases/v$version/$asset'))
+          .getUrl(Uri.parse('$_releases/dox_pdf_lib-v$version/$asset'))
           .timeout(_left(deadline));
       HttpClientResponse res = await req.close().timeout(_left(deadline));
       if (res.statusCode != 200) {

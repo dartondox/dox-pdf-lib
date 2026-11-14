@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-The latest 3.x release gets security fixes.
+The latest release of each package gets security fixes.
 
 ## How to report a problem
 
@@ -21,10 +21,11 @@ Do not open a public issue for a security problem.
 
 ## Scope
 
-This policy covers the `dox_pdf_lib` package:
+This policy covers the packages in this repo, `dox_pdf_lib` and
+`dox_pdf_me`:
 
 - The Dart code.
-- The Rust code in `native/`.
+- The Rust code in `packages/dox-pdf-lib/native/`.
 - The prebuilt libraries in the GitHub releases. You can check them with `SHA256SUMS`.
 
 Other dartondox packages have their own `SECURITY.md`, or use the same process in their repo.

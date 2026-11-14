@@ -9,10 +9,10 @@ updates:
     schedule:
       interval: weekly
   - package-ecosystem: cargo
-    directory: "/native"
+    directory: "/packages/dox-pdf-lib/native"
     schedule:
       interval: weekly
   - package-ecosystem: npm
-    directory: "/tool/crosscheck"
+    directory: "/packages/dox-pdf-lib/tool/crosscheck"
     schedule:
       interval: weekly
