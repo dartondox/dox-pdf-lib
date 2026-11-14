@@ -51,10 +51,34 @@ The names and defaults follow pdf-lib. Some small differences, because this is D
 
 Big files load and save on a native thread, so they do not block the event loop.
 
+### Draw
+
+```dart
+PDFDocument doc = await PDFDocument.create();
+PDFFont font = await doc.embedFont(StandardFonts.timesRoman);
+PDFImage logo = await doc.embedPng(File('logo.png').readAsBytesSync());
+PDFPage page = doc.addPage();
+page.drawText('Hello', x: 50, y: 750, font: font, size: 30, color: rgb(0, 0.5, 1));
+page.drawImage(logo, x: 50, y: 600, width: 100, height: 50);
+page.drawRectangle(x: 50, y: 400, width: 200, height: 100, borderColor: rgb(1, 0, 0), borderWidth: 2);
+page.drawSvgPath('M 0,20 L 100,160 Q 130,200 150,120', x: 50, y: 300);
+File('out.pdf').writeAsBytesSync(await doc.save());
+```
+
+Drawing options are named parameters with the pdf-lib names and defaults. Some small differences:
+
+- Enum values are camelCase: `StandardFonts.timesRoman`, `BlendMode.multiply`, `LineCapStyle.round`.
+- `drawLine` takes records: `start: (x: 0, y: 0)`.
+- `pushOperators` takes a list: `page.pushOperators([pushGraphicsState(), ...])`.
+- A font, image or graphics state (opacity, blend mode) is added once per page, not once per draw call. Resource names are `Helvetica-1`, `Image-1`, `GS-1` (pdf-lib adds a random number).
+- Pages with no font set share one Helvetica per document (pdf-lib embeds one per page).
+- `embedFont` takes `StandardFonts` only for now. Custom font files come later.
+
 ## Status
 
 Ready now: documents, pages, page boxes and rotation, copy and merge, metadata.
 Next: drawing (text, shapes, images), fonts, forms, attachments and embedded pages.
+Drawing is ready too: text with the 14 standard fonts, shapes, SVG paths, JPEG and PNG images.
 
 ## The native library
 

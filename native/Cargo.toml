@@ -8,6 +8,10 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
+# flate2: compress content streams and images (lopdf uses it too)
+flate2 = "1.1.11"
+# png: decode PNG images for embedPng
+png = "0.18.1"
 # rayon: parse the objects of a big file on all cores
 lopdf = { version = "0.47.0", default-features = false, features = ["rayon"] }
 

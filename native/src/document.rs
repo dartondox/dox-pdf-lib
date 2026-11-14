@@ -393,7 +393,10 @@ pub fn create(update_metadata: bool, now: &[u8]) -> Doc {
     if update_metadata {
         metadata::update_info(&mut pdf, now);
     }
-    Doc { pdf }
+    Doc {
+        pdf,
+        ..Default::default()
+    }
 }
 
 /// Load flags from Dart.
@@ -429,7 +432,10 @@ pub fn load(bytes: &[u8], flags: i32, now: &[u8]) -> Result<Doc> {
     if flags & LOAD_UPDATE_METADATA != 0 {
         metadata::update_info(&mut pdf, now);
     }
-    Ok(Doc { pdf })
+    Ok(Doc {
+        pdf,
+        ..Default::default()
+    })
 }
 
 /// The root page node has kids or a `/Count` above 0. A load that finds no
@@ -498,6 +504,7 @@ pub fn write(mut pdf: Document, flags: i32) -> Result<Vec<u8>> {
     ] {
         pdf.trailer.remove(key);
     }
+    crate::draw::flate_page_contents(&mut pdf)?;
     let options = SaveOptions::builder()
         .use_object_streams(streams)
         .use_xref_streams(streams)

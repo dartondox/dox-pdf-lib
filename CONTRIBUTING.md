@@ -74,3 +74,5 @@ Every new feature and every bug fix must add tests.
 - Rust: `cargo test` in `native/`.
 - Dart: `dart test`.
 - Crosscheck with pdf-lib: run `npm ci` in `tool/crosscheck` (needs Node.js). Then `dart test test/crosscheck_test.dart` compares what dox_pdf_lib and pdf-lib read from the same files. Without `node_modules` the test is skipped. CI always runs it.
+- Drawing crosscheck: `test/draw_crosscheck_test.dart` draws the same scene as `tool/crosscheck/draw.mjs` and compares the pages rendered by `pdftoppm` (poppler-utils), and the font metrics. Keep the two scenes the same.
+- `native/src/fonts.bin` holds the standard font metrics of `@pdf-lib/standard-fonts`. `node tool/crosscheck/gen_fonts.mjs` makes it again.
