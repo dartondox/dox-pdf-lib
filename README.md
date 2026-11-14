@@ -333,10 +333,10 @@ Ready-built native libraries exist for:
 | Linux | x64, arm64 |
 | Windows | x64 |
 
-The Linux libraries need glibc. On Alpine (musl), build the library with cargo and set `lib_path` (see below).
+The Linux libraries are built on Ubuntu 22.04. They need glibc 2.35 or newer, for example Ubuntu 22.04 or Debian 12. On older Linux, or on Alpine (musl), build the library with cargo and set `lib_path` (see below).
 
 On another desktop system, install [Rust](https://rustup.rs). The library is then built from source.
-Cross builds (building on one system for another) are not supported.
+Cross builds (building on one system for another) work only with a ready-built library. cargo and `native/target/release` are used only when you build for the system you are on.
 
 ### How the native library is found
 
