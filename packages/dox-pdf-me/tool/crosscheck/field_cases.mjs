@@ -1,7 +1,6 @@
 // Crosscheck cases for signature, circleMark and multiVariableText.
-// cases.mjs adds them to the cases. They have `fields: true`, so
-// test/field_crosscheck_test.dart also compares each schema box on its own
-// (the pixels in the box and the box of the ink), not only the whole page.
+// cases.mjs adds them to the cases. test/crosscheck_test.dart compares each
+// schema box on its own (the pixels in the box and the box of the ink).
 //
 // Keep at least 2 mm between the boxes: a field is compared in its box
 // plus 1 mm.
@@ -26,7 +25,6 @@ function fieldCase(name, rows, extra = {}) {
   return {
     name,
     compare: 'pixels',
-    fields: true,
     template: { basePdf: page, schemas: [rows.map(([s]) => s)] },
     inputs: [input],
     ...extra,
