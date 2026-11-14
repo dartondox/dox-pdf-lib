@@ -42,15 +42,15 @@ const List<int> _waitSeconds = <int>[1, 3];
 /// release: `dart run tool/native_hashes.dart dox_pdf_lib-v<version>`
 const Map<String, String> _sha256 = <String, String>{
   'dox_pdf_lib-linux-arm64.so':
-      '213e214f7f1ffdbd814f3d6da27e60222950e97e8a318219cb9669bddf9b8bbc',
+      '8708d9337b8243ad2ef3e5acd81be58a491cbaff7cf11e7266a72bd325449d50',
   'dox_pdf_lib-linux-x64.so':
-      '9f26117eed20539b71c9b39cd59b52481a12fa7b622e30983c20b9557ec07f59',
+      '8c2a6062bfecf764037504d02d648ee38d8429905c305c59404adb24026ca34b',
   'dox_pdf_lib-macos-arm64.dylib':
-      '96df3b370bd2f89306061c74fc27acfb53b4dc937abf94ca0998ef1bcf4c03ab',
+      '47122c53ea02e91effd6e78d82700e0a18318b42310169ce3e0fc9d35f7d8f4b',
   'dox_pdf_lib-macos-x64.dylib':
-      '433ac35a4a9edc5bdc42d9ce07ecde8582810a30712d54a0e6c9114ad9c5718d',
+      'bc12cbc2ad1fce02ce24a08788f63200187c2eb7e44dc185607fe1adc566c1c4',
   'dox_pdf_lib-windows-x64.dll':
-      'a38a46ec9b3aa82e7b8002f9eac86abcc025aba87a5e1cbfedda07c6eb5538a3',
+      'cb477894d0929c5d5e408f4f173331b474bc9e71b896d3aaa47e02d8120778a8',
 };
 
 void main(List<String> args) async {
