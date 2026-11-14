@@ -450,15 +450,27 @@ Future<DynamicLayout> tableDynamicLayout(
 /// `''` is no rows. Cells that are not strings become strings, like
 /// pdfme's `String(cell)`.
 List<List<String>> parseTableBody(String value) {
-  Object? json = jsonDecode(value.isEmpty ? '[]' : value);
-  if (json is! List) return const <List<String>>[];
-  return <List<String>>[
-    for (Object? row in json)
-      if (row is List)
-        <String>[for (Object? c in row) TableLayout._cellText(c)]
-      else
-        const <String>[],
-  ];
+  try {
+    Object? json = jsonDecode(value.isEmpty ? '[]' : value);
+    if (json is! List) return const <List<String>>[];
+    return <List<String>>[
+      for (Object? row in json)
+        if (row is List)
+          <String>[for (Object? c in row) TableLayout._cellText(c)]
+        else
+          const <String>[],
+    ];
+  } on FormatException catch (e) {
+    // pdfme: JSON.parse throws a SyntaxError
+    throw ArgumentError(
+      '[@pdfme/schemas/table] the table value is not valid JSON: ${e.message}',
+    );
+  } on StackOverflowError {
+    // a cell that is a deeply nested list turns into text recursively
+    throw ArgumentError(
+      '[@pdfme/schemas/table] the table value is nested too deep',
+    );
+  }
 }
 
 /// The `{start, end}` of a table part, from its `__splitRange`.

@@ -29,6 +29,10 @@ bool isDynamicLayoutSchema(Schema schema) => schema.type == 'table';
 
 const double _epsilon = 0.01;
 
+/// The most pages one template page can grow to. pdfme has no limit; a
+/// schema at a huge `y` would make millions of empty pages and hang.
+const int maxDynamicPages = 100000;
+
 /// pdfme's `getDynamicTemplate`: lays out the schemas of a blank base PDF
 /// again for one input. A schema that grows moves the schemas below it
 /// down, and goes on to new pages when it does not fit. Each template page
@@ -45,6 +49,13 @@ Future<List<List<Schema>>> dynamicTemplate(
   double paddingTop = (padding[0] as num).toDouble();
   double contentHeight =
       (basePdf['height'] as num) - paddingTop - (padding[2] as num);
+  // pdfme has no check here; a page with no room would never end
+  if (!contentHeight.isFinite || contentHeight <= 0) {
+    throw ArgumentError(
+      'basePdf leaves no room for schemas: height ${basePdf['height']} '
+      'minus the top and bottom padding is $contentHeight mm',
+    );
+  }
   List<List<Schema>> result = <List<Schema>>[];
 
   for (List<Schema> pageSchemas in template.schemas) {
@@ -124,9 +135,18 @@ double _place(
   double paddingTop,
   List<List<Schema>> pages,
 ) {
+  if (!startY.isFinite) {
+    throw ArgumentError(
+      'schema "${schema.name}" has no finite position after the layout '
+      '(y: ${schema.y}, height: ${schema.height})',
+    );
+  }
   List<double> heights = layout.heights;
   int unit = 0;
-  int page = math.max(0, (startY / contentHeight).floor());
+  double first = (startY / contentHeight).floorToDouble();
+  int page = first >= maxDynamicPages
+      ? maxDynamicPages
+      : math.max(0, first.toInt());
   // JS `%` keeps the sign, like Dart's remainder
   double y = startY.remainder(contentHeight);
   if (y < 0) y = 0;
@@ -134,6 +154,12 @@ double _place(
   bool splittable = heights.length > 1;
 
   while (unit < heights.length) {
+    if (page >= maxDynamicPages) {
+      throw ArgumentError(
+        'schema "${schema.name}" would make more than $maxDynamicPages '
+        'pages (y: ${schema.y})',
+      );
+    }
     while (pages.length <= page) {
       pages.add(<Schema>[]);
     }

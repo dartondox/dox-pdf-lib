@@ -267,6 +267,14 @@ void main() {
       ]);
     });
 
+    test('bad JSON and too deep JSON throw an ArgumentError', () {
+      expect(() => parseTableBody('[["a"'), throwsArgumentError);
+      expect(
+        () => parseTableBody('${'[' * 100000}${']' * 100000}'),
+        throwsArgumentError,
+      );
+    });
+
     test('a part draws its __splitRange rows', () {
       List<List<String>> body = <List<String>>[
         for (int i = 0; i < 5; i++) <String>['$i'],
@@ -386,6 +394,47 @@ void main() {
 
     test('very large units still make pages', () async {
       expect((await run(<double>[1000, 1000])).length, greaterThan(1));
+    });
+
+    Template one(double y, {List<num> padding = const <num>[10, 10, 10, 10]}) =>
+        Template(
+          basePdf: <String, dynamic>{
+            'width': 100,
+            'height': 100,
+            'padding': padding,
+          },
+          schemas: <List<Schema>>[
+            <Schema>[
+              Schema(<String, dynamic>{
+                'name': 'a',
+                'type': 'table',
+                'position': <String, num>{'x': 10, 'y': y},
+                'width': 10,
+                'height': 10,
+              }),
+            ],
+          ],
+        );
+    Future<DynamicLayout> twoRows(Schema s) async =>
+        DynamicLayout(<double>[10, 10]);
+
+    test('a schema far down throws instead of making millions of pages', () {
+      for (double y in <double>[1e9, 1e308]) {
+        expect(dynamicTemplate(one(y), twoRows), throwsArgumentError);
+      }
+    });
+
+    test('a NaN or infinite y throws', () {
+      for (double y in <double>[double.nan, double.infinity]) {
+        expect(dynamicTemplate(one(y), twoRows), throwsArgumentError);
+      }
+    });
+
+    test('padding that leaves no room throws', () {
+      expect(
+        dynamicTemplate(one(10, padding: const <num>[50, 10, 50, 10]), twoRows),
+        throwsArgumentError,
+      );
     });
 
     test('an empty template page stays', () async {
