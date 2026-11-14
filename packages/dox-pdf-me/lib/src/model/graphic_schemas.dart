@@ -128,6 +128,8 @@ class LineSchema extends Schema {
     this.color = '#000000',
   });
 
+  /// From JSON, a missing `readOnly` is false. The constructor default is
+  /// true.
   LineSchema.fromJson(super.json)
     : color = _str(json['color']) ?? '#000000',
       super.fromJson();

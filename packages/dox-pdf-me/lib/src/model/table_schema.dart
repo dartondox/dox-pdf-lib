@@ -78,8 +78,15 @@ class CellStyle {
     this.alternateBackgroundColor = '#f5f5f5',
   });
 
-  /// Reads a cell style. Missing values are the [CellStyle.head] values
-  /// when [head] is true, else the [CellStyle.body] values.
+  /// Reads a cell style. When a key is missing, the getter shows the
+  /// [CellStyle.head] value when [head] is true, else the [CellStyle.body]
+  /// value. The PDF is drawn from the source JSON, and the drawer uses its
+  /// own fallback there (`_defaultStyle` in `table_layout.dart`: `fontSize`
+  /// 10, `borderColor` `#000000`, `borderWidth` 0). The two differ only for
+  /// a missing key. The pdfme designer always writes every key.
+  ///
+  /// `alternateBackgroundColor` is null when the key is missing. It does
+  /// not take the body default.
   CellStyle.fromJson(Map<String, Object?> json, {bool head = false})
     : fontName = _str(json['fontName']),
       alignment = _enum(Alignment.values, json['alignment'], Alignment.left),
@@ -273,7 +280,7 @@ class TableSchema extends Schema {
   @override
   String get type => 'table';
 
-  /// The head text of each column.
+  /// The head text of each column. From JSON, a missing `head` is empty.
   final List<String> head;
 
   final List<double>? _widths;
@@ -281,6 +288,10 @@ class TableSchema extends Schema {
   /// The width of each column, in percent of the table width. One value
   /// per column, eg. `[30, 70]`. Not set: `[30, 30, 40]` for the default
   /// head, else the same width for each column.
+  ///
+  /// From JSON, a missing `headWidthPercentages` still shows that split
+  /// here, but generating the PDF throws, like pdfme. Only a typed
+  /// `TableSchema(...)` built in Dart gets the split when it is drawn.
   List<double> get headWidthPercentages =>
       _widths ??
       (head.length == 3 &&
