@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Fix: `embedPng` with a broken palette (its length is not a multiple of 3) now throws an "Invalid PNG" error. Before, the png crate panicked inside (the panic was caught, but the message was an internal error). Found by the image fuzz target.
 - New: `dictionaryWordBreaks(text)` gives the word breaks inside Thai, Lao, Khmer and Myanmar text, the same as `Intl.Segmenter` of Node.js and browsers (ICU word lists and break rules). It is an extra, not part of pdf-lib. The native library is about 1 MB bigger.
 - New: `THIRD_PARTY_NOTICES` with the licenses of the code and data in the native library (ICU, ICU4X and all Rust crates). It is in the package and in each GitHub release.
 - The ready-built libraries now come from the GitHub release with the tag `dox_pdf_lib-v<version>` (it was `v<version>`). The repo is now a workspace with more packages, and each package has its own tags.

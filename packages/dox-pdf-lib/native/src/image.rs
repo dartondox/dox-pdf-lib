@@ -112,6 +112,12 @@ fn bad_png(e: png::DecodingError) -> Error {
 /// when it is over `PNG_LIMIT`.
 pub fn png_decoded_size(data: &[u8]) -> Result<usize> {
     let reader = png_reader(data)?;
+    // The png crate panics on a PLTE chunk whose length is not a multiple
+    // of 3 (png 0.18.1, transform/palette.rs). The PNG spec says it is an
+    // error, so stop here.
+    if reader.info().palette.as_ref().is_some_and(|p| p.len() % 3 != 0) {
+        return Err(Error::generic("Invalid PNG: the palette length is not a multiple of 3"));
+    }
     let (w, h) = reader.info().size();
     let size = (w as usize).saturating_mul(h as usize).saturating_mul(4);
     if size > PNG_LIMIT {
@@ -374,6 +380,27 @@ mod tests {
         let gray = vec![0u8; 9000 / 8 * 8000];
         let file = encode_png(9000, 8000, png::ColorType::Grayscale, png::BitDepth::One, &gray);
         assert!(decode_png(&file).err().unwrap().message.contains("too big"));
+    }
+
+    #[test]
+    fn palette_with_a_broken_length_is_an_error() {
+        let mut out = Vec::new();
+        let mut e = png::Encoder::new(&mut out, 2, 1);
+        e.set_color(png::ColorType::Indexed);
+        e.set_palette(vec![255, 0, 0, 0, 255, 0]);
+        e.write_header().unwrap().write_image_data(&[0, 1]).unwrap();
+        // make the PLTE chunk 4 bytes long (was 6), with a new CRC
+        let at = out.windows(4).position(|w| w == b"PLTE").unwrap() - 4;
+        let mut chunk = b"PLTE".to_vec();
+        chunk.extend_from_slice(&[255, 0, 0, 0]);
+        let mut crc = flate2::Crc::new();
+        crc.update(&chunk);
+        let mut new_chunk = 4u32.to_be_bytes().to_vec();
+        new_chunk.extend_from_slice(&chunk);
+        new_chunk.extend_from_slice(&crc.sum().to_be_bytes());
+        out.splice(at..at + 4 + 4 + 6 + 4, new_chunk);
+        let err = decode_png(&out).err().unwrap();
+        assert!(err.message.contains("palette"), "{}", err.message);
     }
 
     #[test]
