@@ -157,6 +157,34 @@ void main() {
     expect(widths(again), want);
   });
 
+  test('getPages is a copy, like pdf-lib', () async {
+    PDFDocument doc = await PDFDocument.create();
+    doc.addPage();
+    doc.addPage();
+    List<PDFPage> pages = doc.getPages();
+    for (PDFPage _ in doc.getPages()) {
+      doc.addPage();
+    }
+    expect(pages.length, 2);
+    expect(doc.getPageCount(), 4);
+  });
+
+  test('removePage with a bad index says the index', () async {
+    PDFDocument doc = await PDFDocument.create();
+    doc.addPage();
+    expect(
+      () => doc.removePage(-1),
+      throwsA(
+        isA<RangeError>().having(
+          (RangeError e) => e.message,
+          'message',
+          '`index` must be at least 0 and at most 0, but was actually -1',
+        ),
+      ),
+    );
+    expect(doc.getPageCount(), 1);
+  });
+
   test('broken input never crashes', () async {
     for (List<int> input in <List<int>>[
       <int>[],

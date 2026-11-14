@@ -1,4 +1,3 @@
-import 'dart:collection';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:typed_data';
@@ -142,7 +141,9 @@ class PDFDocument implements Finalizable {
       _pageMap.putIfAbsent(ref, () => PDFPage._(this, ref));
 
   /// All pages, in order.
-  List<PDFPage> getPages() => UnmodifiableListView<PDFPage>(_pageList());
+  /// A copy, like pdf-lib's fresh array: it does not change when pages are
+  /// added or removed later.
+  List<PDFPage> getPages() => List<PDFPage>.unmodifiable(_pageList());
 
   List<PDFPage> _pageList() {
     List<PDFPage>? pages = _pages;
@@ -205,6 +206,9 @@ class PDFDocument implements Finalizable {
 
   /// Takes the page at [index] out of the document.
   void removePage(int index) {
+    int count = _pageList().length;
+    if (count == 0) throw RemovePageFromEmptyDocumentError();
+    _checkIndex(index, count - 1);
     check(doxPdfRemovePage(_handle, index));
     _pages?.removeAt(index);
   }
