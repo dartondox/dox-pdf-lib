@@ -1,0 +1,12 @@
+{
+  "name": "dox-pdf-me-crosscheck",
+  "private": true,
+  "description": "Renders the crosscheck templates with the real pdfme generator.",
+  "type": "module",
+  "dependencies": {
+    "@pdfme/common": "6.2.8",
+    "@pdfme/generator": "6.2.8",
+    "@pdfme/pdf-lib": "6.2.8",
+    "@pdfme/schemas": "6.2.8"
+  }
+}
