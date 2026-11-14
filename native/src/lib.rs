@@ -7,6 +7,7 @@ mod draw;
 mod embed;
 mod ffi_util;
 mod font;
+mod form;
 mod image;
 mod metadata;
 mod page;

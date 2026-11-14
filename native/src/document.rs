@@ -463,6 +463,7 @@ pub fn is_encrypted(pdf: &Document) -> bool {
 
 pub const SAVE_OBJECT_STREAMS: i32 = 1;
 pub const SAVE_ADD_DEFAULT_PAGE: i32 = 2;
+pub const SAVE_UPDATE_FIELD_APPEARANCES: i32 = 4;
 
 /// The part of save that changes the document (pdf-lib's addDefaultPage).
 /// Runs under the lock. Returns a copy to write.
@@ -472,6 +473,9 @@ pub fn prepare_save(doc: &mut Doc, flags: i32) -> Result<Document> {
     if flags & SAVE_ADD_DEFAULT_PAGE != 0 && page_entries(&doc.pdf)?.is_empty() {
         let page = new_page(&mut doc.pdf, A4.0, A4.1);
         insert_page(&mut doc.pdf, 0, page)?;
+    }
+    if flags & SAVE_UPDATE_FIELD_APPEARANCES != 0 {
+        crate::form::before_save(doc)?;
     }
     // A copy: lopdf's writer changes the document (version, xref type), and
     // the write runs without the lock, so other calls do not wait for it.

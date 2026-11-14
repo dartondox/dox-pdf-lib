@@ -15,3 +15,7 @@
   - `pushOperators` with the pdf-lib operator helpers (`moveTo`, `lineTo`, `setFillingColor`, ...).
 - Attachments: `attach` (bytes or base64, with `mimeType`, `description`, `creationDate`, `modificationDate`, `afRelationship`). The name tree is kept sorted. Extra: `getAttachments` reads them back.
 - Embedded pages: `embedPdf`, `embedPage`, `embedPages`, `PDFEmbeddedPage` (`width`, `height`, `scale`, `size`) and `page.drawPage` (`x`, `y`, `xScale`, `yScale`, `width`, `height`, `rotate`, `xSkew`, `ySkew`, `opacity`, `blendMode`). The same source page embedded twice gives the same XObject.
+- Forms, like pdf-lib:
+  - `getForm`, `PDFForm` (`getFields`, `getField`, `getTextField` and the other getters, `create...` for every field type, `removeField`, `flatten`, `updateFieldAppearances`, `getDefaultFont`, XFA).
+  - `PDFTextField`, `PDFCheckBox`, `PDFRadioGroup`, `PDFDropdown`, `PDFOptionList`, `PDFButton`, `PDFSignature` with the pdf-lib methods and flags, and `addToPage`.
+  - Appearance streams like pdf-lib's default providers. `save` updates them.

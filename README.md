@@ -77,11 +77,36 @@ Drawing options are named parameters with the pdf-lib names and defaults. Some s
 - Pages with no font set share one Helvetica per document (pdf-lib embeds one per page).
 - `embedFont` takes `StandardFonts` only for now. Custom font files come later.
 
+### Forms
+
+```dart
+PDFDocument doc = await PDFDocument.load(File('form.pdf').readAsBytesSync());
+PDFForm form = doc.getForm();
+form.getTextField('person.name').setText('Jane Doe');
+form.getCheckBox('agree').check();
+form.getRadioGroup('color').select('green');
+form.getDropdown('country').select('Myanmar');
+form.flatten(); // optional: draw the fields into the pages
+File('filled.pdf').writeAsBytesSync(await doc.save());
+```
+
+Text fields, check boxes, radio groups, dropdowns, option lists, buttons and signatures, with the pdf-lib methods. `createTextField(...)` and the other `create` methods make new fields, and `addToPage` adds them to a page. Appearances are made like pdf-lib's default providers, and `save()` updates them (`updateFieldAppearances: true`). Some small differences:
+
+- `addToPage` options are named parameters. Refs (`field.ref`, `markFieldAsDirty(ref)`) are `int`.
+- `acroField` is a small read-only view: `getWidgets()` (rectangle, page, on value, state) and `getFullyQualifiedName()`.
+- No custom appearance providers: `updateAppearances(font)` uses the default one.
+- A field with no `/DA` takes it from its parent field or the AcroForm, as the PDF spec says. pdf-lib reads only the field's own `/DA`.
+- `removeField` and `flatten` also take the widgets out of the `/Annots` of their pages. pdf-lib leaves references to deleted objects there.
+- A broken widget (no page, no appearance) is skipped by `flatten`. pdf-lib throws.
+- `getForm()` removes XFA data like pdf-lib, but prints no warning.
+- Appearances use the standard fonts for now. Custom font files come later.
+
 ## Status
 
 Ready now: documents, pages, page boxes and rotation, copy and merge, metadata.
 Next: drawing (text, shapes, images), fonts, forms, attachments and embedded pages.
 Drawing is ready too: text with the 14 standard fonts, shapes, SVG paths, JPEG and PNG images.
+Forms are ready too: read, fill, create and flatten fields.
 
 ## The native library
 

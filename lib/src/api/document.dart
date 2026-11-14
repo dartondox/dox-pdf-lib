@@ -9,6 +9,7 @@ import '../ffi/draw_bindings.dart';
 import '../ffi/embed_bindings.dart';
 import '../ffi/ffi_util.dart';
 import '../ffi/font_bindings.dart';
+import '../ffi/form_bindings.dart';
 import '../ffi/image_bindings.dart';
 import '../ffi/metadata_bindings.dart';
 import '../ffi/page_bindings.dart';
@@ -23,6 +24,7 @@ part 'attachment.dart';
 part 'draw.dart';
 part 'embed.dart';
 part 'font.dart';
+part 'form.dart';
 part 'image.dart';
 part 'metadata.dart';
 part 'page.dart';
@@ -113,7 +115,8 @@ class PDFDocument implements Finalizable {
 
   /// The file as bytes. Defaults as in pdf-lib.
   ///
-  /// [updateFieldAppearances] has no effect yet: forms come later.
+  /// With [updateFieldAppearances], the field appearances are updated
+  /// first, when the form was used ([PDFDocumentForm.getForm]).
   Future<Uint8List> save({
     bool useObjectStreams = true,
     bool addDefaultPage = true,
@@ -121,7 +124,8 @@ class PDFDocument implements Finalizable {
   }) async {
     int flags =
         (useObjectStreams ? saveObjectStreams : 0) |
-        (addDefaultPage ? saveAddDefaultPage : 0);
+        (addDefaultPage ? saveAddDefaultPage : 0) |
+        (updateFieldAppearances ? saveUpdateFieldAppearances : 0);
     Int64List out = Int64List(1);
     int id = Pending.nextId();
     int status = check(

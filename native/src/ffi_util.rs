@@ -31,6 +31,8 @@ pub const ERR_PARSE: i32 = 7;
 pub const ERR_DISPOSED: i32 = 8;
 /// Embed: the page has no `/Contents` (pdf-lib's MissingPageContentsEmbeddingError).
 pub const ERR_MISSING_CONTENTS: i32 = 20;
+/// A pdf-lib form error. The message is `<error class>\0<text>`.
+pub const ERR_FORM: i32 = 9;
 
 /// Input or output at least this big runs on a Rust thread, so a large
 /// load or save does not block the Dart event loop. Smaller work runs
@@ -82,6 +84,7 @@ pub struct Doc {
     /// Goes up on every call that changes the document (`with_doc_mut`).
     /// The embed cache of another document checks it.
     pub generation: u64,
+    pub form: crate::form::FormState,
 }
 
 pub type Shared = Mutex<Doc>;
