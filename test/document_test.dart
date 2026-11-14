@@ -106,6 +106,31 @@ void main() {
     expect(merged.getPageCount(), 4);
   });
 
+  test('the same page added twice counts twice, like pdf-lib', () async {
+    PDFDocument doc = await PDFDocument.create();
+    PDFPage page = doc.addPage();
+    doc.addPage(page);
+    expect(doc.getPageCount(), 2);
+    PDFDocument again = await PDFDocument.load(await doc.save());
+    expect(again.getPageCount(), 2);
+  });
+
+  test('useObjectStreams: false writes a classic xref table', () async {
+    PDFDocument doc = await PDFDocument.create();
+    doc.addPage();
+    // load a file with an xref stream, then save it plain
+    PDFDocument loaded = await PDFDocument.load(await doc.save());
+    String text = String.fromCharCodes(
+      await loaded.save(useObjectStreams: false),
+    );
+    expect(text, contains('\nxref\n'));
+    expect(text, isNot(contains('/ObjStm')));
+    expect(
+      text.substring(text.lastIndexOf('trailer')),
+      isNot(contains('/XRef')),
+    );
+  });
+
   test('broken input never crashes', () async {
     for (List<int> input in <List<int>>[
       <int>[],

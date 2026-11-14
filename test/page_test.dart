@@ -50,6 +50,20 @@ void main() {
     expect(page.getTrimBox(), (x: 5.0, y: 5.0, width: 10.0, height: 10.0));
   });
 
+  test('NaN and infinity are rejected', () async {
+    PDFDocument doc = await PDFDocument.create();
+    PDFPage page = doc.addPage(<double>[100, 200]);
+    for (double bad in <double>[double.nan, double.infinity]) {
+      expect(() => page.setSize(bad, 1), throwsArgumentError);
+      expect(() => page.setWidth(bad), throwsArgumentError);
+      expect(() => page.setHeight(bad), throwsArgumentError);
+      expect(() => page.setCropBox(0, 0, bad, 1), throwsArgumentError);
+      expect(() => doc.addPage(<double>[bad, 1]), throwsArgumentError);
+    }
+    expect(page.getSize(), (width: 100.0, height: 200.0));
+    expect(doc.getPageCount(), 1);
+  });
+
   test('rotation', () async {
     PDFDocument doc = await PDFDocument.create();
     PDFPage page = doc.addPage();

@@ -60,7 +60,7 @@ without merge conflicts.
 
 - Load and save of a big file (1 MiB or more, `ASYNC_THRESHOLD`) run on a Rust thread. The export returns `PENDING`, and the thread reports with a callback (`NativeCallable.listener`, see `Pending` in `ffi_util.dart`). Small files run inline, because a thread costs more than the work.
 - A Rust thread is cheaper than `Isolate.run` (tens of microseconds, not about a millisecond), and the bytes do not have to go to another isolate.
-- Calls on one document wait for each other (a mutex). A call made while a big save runs waits for the save.
+- Calls on one document wait for each other (a mutex). Save copies the document under the lock (`Doc` is `Clone`) and writes the copy without it, so other calls do not wait for a big save. Do the same for other slow work that only reads the document.
 
 **Untrusted input.**
 

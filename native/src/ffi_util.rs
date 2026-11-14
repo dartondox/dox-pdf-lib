@@ -155,8 +155,8 @@ pub extern "C" fn dox_pdf_bytes_free(bytes: *mut c_void) {
 }
 
 /// Frees a document handle. Dart calls it from `dispose()` or from its
-/// `NativeFinalizer`. A save that still runs on a Rust thread holds its own
-/// `Arc`, so the document stays alive until that save ends.
+/// `NativeFinalizer`. A save that still runs on a Rust thread writes its own
+/// copy, so it does not need the handle.
 #[unsafe(no_mangle)]
 pub extern "C" fn dox_pdf_doc_free(handle: *mut c_void) {
     if handle.is_null() {
@@ -170,19 +170,6 @@ pub extern "C" fn dox_pdf_doc_free(handle: *mut c_void) {
 
 pub fn handle_into_raw(doc: Doc) -> i64 {
     Arc::into_raw(Arc::new(Mutex::new(doc))) as i64
-}
-
-/// A new owned `Arc` from a handle, for work on another thread.
-pub fn handle_arc(handle: *const c_void) -> Result<Arc<Shared>> {
-    if handle.is_null() {
-        return Err(Error::new(ERR_DISPOSED, "the document was disposed"));
-    }
-    let ptr = handle as *const Shared;
-    // SAFETY: Dart keeps the handle alive while it calls us.
-    unsafe {
-        Arc::increment_strong_count(ptr);
-        Ok(Arc::from_raw(ptr))
-    }
 }
 
 pub fn handle_ref<'a>(handle: *const c_void) -> Result<&'a Shared> {

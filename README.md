@@ -42,6 +42,12 @@ The names and defaults follow pdf-lib. Some small differences, because this is D
 - `getLanguage()` exists too.
 - The default producer is `dox_pdf_lib (...)`, not `pdf-lib (...)`.
 - A document is freed when it is garbage collected. Call `dispose()` to free it at once.
+- Sizes and boxes are stored with about 7 significant digits (eg. `595.28` stays `595.28`, `12345.678` becomes `12345.68`). pdf-lib keeps more digits. The PDF library under the hood stores real numbers as 32-bit floats.
+- A page with no MediaBox at all reads as US Letter (612 x 792). pdf-lib throws an error.
+- NaN and infinity in sizes and boxes throw an `ArgumentError`.
+- `load(..., ignoreEncryption: true)`:
+  - A file with only an owner password (it opens with no password) is decrypted. You can read its text and info. `isEncrypted` stays true. `save()` writes an unencrypted file.
+  - A file with a user password throws `PDFParsingError`. Its objects can not be read without the password. pdf-lib still lists the pages.
 
 Big files load and save on a native thread, so they do not block the event loop.
 

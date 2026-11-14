@@ -45,8 +45,15 @@ class PDFDocument implements Finalizable {
     return PDFDocument._(out[0]);
   }
 
-  /// Reads a PDF. Throws [EncryptedPDFError] for an encrypted file, unless
-  /// [ignoreEncryption] is true, and [PDFParsingError] for a broken one.
+  /// Reads a PDF. Throws [PDFParsingError] for a broken one.
+  ///
+  /// An encrypted file throws [EncryptedPDFError], unless [ignoreEncryption]
+  /// is true. Then, unlike pdf-lib:
+  /// - A file with only an owner password (it opens with no password) is
+  ///   decrypted. Its text and info can be read, [isEncrypted] stays true,
+  ///   and [save] writes an unencrypted file.
+  /// - A file with a user password throws [PDFParsingError]: its objects
+  ///   can not be read without the password.
   static Future<PDFDocument> load(
     Uint8List pdf, {
     bool ignoreEncryption = false,
@@ -86,7 +93,7 @@ class PDFDocument implements Finalizable {
     _pageMap.clear();
   }
 
-  /// True when the file has an `/Encrypt` entry.
+  /// True when the source file was encrypted, like pdf-lib.
   bool get isEncrypted => check(doxPdfIsEncrypted(_handle)) == 1;
 
   /// The file as bytes. Defaults as in pdf-lib.
@@ -171,6 +178,8 @@ class PDFDocument implements Finalizable {
       ref = page.ref;
     } else if (page is List<num> && page.length == 2) {
       size = <double>[page[0].toDouble(), page[1].toDouble()];
+      _finite(size[0], 'width');
+      _finite(size[1], 'height');
     } else if (page != null) {
       throw ArgumentError.value(
         page,

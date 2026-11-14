@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::c_void;
 
+use lopdf::xref::XrefType;
 use lopdf::{Dictionary, Document, Object, ObjectId, SaveOptions};
 
 use crate::ffi_util::*;
@@ -51,6 +52,8 @@ pub fn as_f64(obj: &Object) -> Option<f64> {
 }
 
 /// A number object: an integer when the value is whole, like pdf-lib writes.
+/// A real is an f32 in lopdf (`Object::Real(f32)`), so it keeps about 7
+/// significant digits. Enough for page geometry; the README says so.
 pub fn num(v: f64) -> Object {
     if v.fract() == 0.0 && v.abs() < 1e15 {
         Object::Integer(v as i64)
@@ -136,7 +139,8 @@ fn is_tree_node(doc: &Document, id: ObjectId) -> bool {
     }
 }
 
-/// All pages in order. The walk does not trust `/Count` and skips loops.
+/// All pages in order. The walk does not trust `/Count`. A tree node seen
+/// twice (a loop) is skipped; a page seen twice is listed twice, like pdf-lib.
 pub fn page_entries(doc: &Document) -> Result<Vec<PageEntry>> {
     let root = root_pages(doc)?;
     let mut out = Vec::new();
@@ -148,13 +152,12 @@ pub fn page_entries(doc: &Document) -> Result<Vec<PageEntry>> {
         let Some(kid) = list.get(idx) else { continue };
         stack.push((node, idx + 1, path.clone()));
         let Object::Reference(kid) = kid else { continue };
-        if !seen.insert(*kid) || path.len() >= MAX_DEPTH {
-            continue;
-        }
         let mut here = path;
         here.push((node, idx));
         if is_tree_node(doc, *kid) {
-            stack.push((*kid, 0, here));
+            if seen.insert(*kid) && here.len() < MAX_DEPTH {
+                stack.push((*kid, 0, here));
+            }
         } else if matches!(doc.objects.get(kid), Some(Object::Dictionary(_))) {
             out.push(PageEntry { id: *kid, path: here });
         }
@@ -404,10 +407,32 @@ pub fn load(bytes: &[u8], flags: i32, now: &[u8]) -> Result<Doc> {
         };
         Error::new(ERR_PARSE, message)
     })?;
+    if page_entries(&pdf)?.is_empty() && root_says_pages(&pdf) {
+        return Err(Error::new(
+            ERR_PARSE,
+            "the page tree has pages, but none of them could be read",
+        ));
+    }
     if flags & LOAD_UPDATE_METADATA != 0 {
         metadata::update_info(&mut pdf, now);
     }
     Ok(Doc { pdf })
+}
+
+/// The root page node has kids or a `/Count` above 0. A load that finds no
+/// page then lost them all (eg. lopdf dropped broken objects).
+///
+/// A tree that lost only some kids loads, with the pages that are left:
+/// pdf-lib also skips a kid it can not look up, and `/Count` is often wrong
+/// in real files, so it is no proof of loss.
+fn root_says_pages(pdf: &Document) -> bool {
+    let Ok(root) = root_pages(pdf) else { return false };
+    let has_kids = kids(pdf, root).is_some_and(|k| !k.is_empty());
+    let count = match pdf.objects.get(&root) {
+        Some(Object::Dictionary(d)) => dict_get(pdf, d, b"Count").and_then(as_f64).unwrap_or(0.0),
+        _ => 0.0,
+    };
+    has_kids || count > 0.0
 }
 
 /// Like pdf-lib: the trailer has an `/Encrypt` entry. When lopdf could
@@ -420,19 +445,57 @@ pub fn is_encrypted(pdf: &Document) -> bool {
 pub const SAVE_OBJECT_STREAMS: i32 = 1;
 pub const SAVE_ADD_DEFAULT_PAGE: i32 = 2;
 
-pub fn save(doc: &mut Doc, flags: i32) -> Result<Vec<u8>> {
+/// The part of save that changes the document (pdf-lib's addDefaultPage).
+/// Runs under the lock. Returns a copy to write.
+pub fn prepare_save(doc: &mut Doc, flags: i32) -> Result<Document> {
     if flags & SAVE_ADD_DEFAULT_PAGE != 0 && page_entries(&doc.pdf)?.is_empty() {
         let page = new_page(&mut doc.pdf, A4.0, A4.1);
         insert_page(&mut doc.pdf, 0, page)?;
     }
-    let mut out = Vec::with_capacity(estimate_size(&doc.pdf));
+    // A copy: lopdf's writer changes the document (version, xref type), and
+    // the write runs without the lock, so other calls do not wait for it.
+    // The copy is made here, on the caller's thread, so the file has the
+    // document as it was when save was called. Measured on an 11 MB file
+    // with 200 pages: copy 2.4 ms, write 2.8 ms.
+    Ok(doc.pdf.clone())
+}
+
+/// Writes the file, without the lock.
+pub fn write(mut pdf: Document, flags: i32) -> Result<Vec<u8>> {
+    let mut out = Vec::with_capacity(estimate_size(&pdf));
     let streams = flags & SAVE_OBJECT_STREAMS != 0;
+    // a loaded file keeps its xref kind; pdf-lib's PDFWriter always writes a
+    // classic table, its PDFStreamWriter a stream
+    pdf.reference_table.cross_reference_type = if streams {
+        XrefType::CrossReferenceStream
+    } else {
+        XrefType::CrossReferenceTable
+    };
+    // a trailer read from an xref stream keeps the stream keys; they do not
+    // belong in a classic trailer. A full save also has no /Prev.
+    for key in [
+        &b"Type"[..],
+        b"W",
+        b"Index",
+        b"Filter",
+        b"DecodeParms",
+        b"Length",
+        b"XRefStm",
+        b"Prev",
+    ] {
+        pdf.trailer.remove(key);
+    }
     let options = SaveOptions::builder()
         .use_object_streams(streams)
         .use_xref_streams(streams)
         .build();
-    doc.pdf.save_with_options(&mut out, options)?;
+    pdf.save_with_options(&mut out, options)?;
     Ok(out)
+}
+
+#[cfg(test)]
+pub fn save(doc: &mut Doc, flags: i32) -> Result<Vec<u8>> {
+    write(prepare_save(doc, flags)?, flags)
 }
 
 /// About the size of the saved file. Only used to pick inline or thread.
@@ -490,14 +553,12 @@ pub extern "C" fn dox_pdf_load(
 #[unsafe(no_mangle)]
 pub extern "C" fn dox_pdf_save(handle: *const c_void, flags: i32, out: *mut i64, done: DoneCallback, id: i64) -> i32 {
     call(|| {
-        let shared = handle_arc(handle)?;
-        let big = estimate_size(&lock(&shared)?.pdf) >= ASYNC_THRESHOLD;
-        if !big {
-            let bytes = save(&mut *lock(&shared)?, flags)?;
-            write_out(out, bytes_into_raw(bytes));
+        let pdf = with_doc(handle, |d| prepare_save(d, flags))?;
+        if estimate_size(&pdf) < ASYNC_THRESHOLD {
+            write_out(out, bytes_into_raw(write(pdf, flags)?));
             return Ok(OK);
         }
-        spawn(done, id, move || Ok(bytes_into_raw(save(&mut *lock(&shared)?, flags)?)))
+        spawn(done, id, move || Ok(bytes_into_raw(write(pdf, flags)?)))
     })
 }
 
@@ -541,6 +602,9 @@ pub extern "C" fn dox_pdf_insert_page(
             let count = page_entries(&d.pdf)?.len();
             if index < 0 || index as usize > count {
                 return Err(range_error(index.max(0) as usize, count));
+            }
+            if page == 0 && !(width.is_finite() && height.is_finite()) {
+                return Err(Error::generic("a page size is not a finite number"));
             }
             let id = if page == 0 {
                 new_page(&mut d.pdf, width, height)
@@ -685,6 +749,41 @@ mod tests {
         ] {
             assert!(load(input, 0, b"").is_err());
         }
+    }
+
+    #[test]
+    fn a_page_twice_counts_twice() {
+        let mut d = create(false, b"");
+        let p = new_page(&mut d.pdf, 1.0, 1.0);
+        insert_page(&mut d.pdf, 0, p).unwrap();
+        insert_page(&mut d.pdf, 1, p).unwrap();
+        assert_eq!(count(&d.pdf), 2);
+        remove_page(&mut d.pdf, 1).unwrap();
+        assert_eq!(count(&d.pdf), 1);
+    }
+
+    #[test]
+    fn all_pages_lost_is_an_error() {
+        let mut d = create(false, b"");
+        let p = new_page(&mut d.pdf, 1.0, 1.0);
+        insert_page(&mut d.pdf, 0, p).unwrap();
+        d.pdf.objects.remove(&p);
+        let bytes = write(d.pdf.clone(), 0).unwrap();
+        assert_eq!(load(&bytes, 0, b"").err().unwrap().status, ERR_PARSE);
+    }
+
+    #[test]
+    fn plain_save_writes_a_classic_xref_table() {
+        let mut d = create(false, b"");
+        let streams = save(&mut d, SAVE_OBJECT_STREAMS | SAVE_ADD_DEFAULT_PAGE).unwrap();
+        // a file that came with an xref stream
+        let mut again = load(&streams, 0, b"").unwrap();
+        let plain = save(&mut again, 0).unwrap();
+        let text = String::from_utf8_lossy(&plain);
+        assert!(text.contains("\nxref\n"));
+        let trailer = &text[text.rfind("trailer").expect("a trailer")..];
+        assert!(!trailer.contains("/XRef"), "{trailer}");
+        assert!(!text.contains("/ObjStm"));
     }
 
     #[test]

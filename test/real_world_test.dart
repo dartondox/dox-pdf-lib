@@ -90,6 +90,27 @@ void main() {
     expect(again.getPage(0).getRotation().angle, 0);
   });
 
+  test('a page tree that lost all its pages is an error', () async {
+    // the only kid points at an object that is not in the file
+    await expectLater(
+      PDFDocument.load(
+        buildPdf(<String>[
+          '<< /Type /Catalog /Pages 2 0 R >>',
+          '<< /Type /Pages /Kids [9 0 R] /Count 1 >>',
+        ]),
+      ),
+      throwsA(isA<PDFParsingError>()),
+    );
+    // an empty tree is fine
+    PDFDocument empty = await PDFDocument.load(
+      buildPdf(<String>[
+        '<< /Type /Catalog /Pages 2 0 R >>',
+        '<< /Type /Pages /Kids [] /Count 0 >>',
+      ]),
+    );
+    expect(empty.getPageCount(), 0);
+  });
+
   test('a loop in the page tree does not hang', () async {
     PDFDocument doc = await PDFDocument.load(
       buildPdf(<String>[

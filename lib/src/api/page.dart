@@ -3,6 +3,14 @@ part of 'document.dart';
 /// A page box: lower left corner, width and height.
 typedef PDFBox = ({double x, double y, double width, double height});
 
+/// Throws an [ArgumentError] for NaN and infinity: a PDF has no such
+/// numbers.
+void _finite(double value, String name) {
+  if (!value.isFinite) {
+    throw ArgumentError.value(value, name, 'must be a finite number');
+  }
+}
+
 /// One page, like pdf-lib's `PDFPage`. It belongs to [doc].
 class PDFPage {
   PDFPage._(this.doc, this.ref);
@@ -19,6 +27,10 @@ class PDFPage {
   }
 
   void _setBox(int kind, double x, double y, double width, double height) {
+    _finite(x, 'x');
+    _finite(y, 'y');
+    _finite(width, 'width');
+    _finite(height, 'height');
     check(doxPdfPageSetBox(doc._handle, ref, kind, x, y, width, height));
   }
 
@@ -34,14 +46,21 @@ class PDFPage {
 
   /// Sets the media box size. Crop, bleed, trim and art boxes that were the
   /// same as the media box follow it.
-  void setSize(double width, double height) =>
-      check(doxPdfPageSetSize(doc._handle, ref, width, height));
+  void setSize(double width, double height) {
+    _finite(width, 'width');
+    _finite(height, 'height');
+    check(doxPdfPageSetSize(doc._handle, ref, width, height, 0));
+  }
 
-  void setWidth(double width) =>
-      check(doxPdfPageSetSize(doc._handle, ref, width, double.nan));
+  void setWidth(double width) {
+    _finite(width, 'width');
+    check(doxPdfPageSetSize(doc._handle, ref, width, 0, keepHeight));
+  }
 
-  void setHeight(double height) =>
-      check(doxPdfPageSetSize(doc._handle, ref, double.nan, height));
+  void setHeight(double height) {
+    _finite(height, 'height');
+    check(doxPdfPageSetSize(doc._handle, ref, 0, height, keepWidth));
+  }
 
   /// Sets the rotation. It must be a multiple of 90 degrees.
   void setRotation(Rotation angle) =>

@@ -35,8 +35,11 @@ external int doxPdfPageSetBox(
   double height,
 );
 
-/// A NaN width or height keeps that side.
-@Native<Int32 Function(Pointer<Void>, Int64, Double, Double)>(
+/// [keep] bits: keep the width or the height as it is.
+const int keepWidth = 1;
+const int keepHeight = 2;
+
+@Native<Int32 Function(Pointer<Void>, Int64, Double, Double, Int32)>(
   symbol: 'dox_pdf_page_set_size',
   isLeaf: true,
 )
@@ -45,6 +48,7 @@ external int doxPdfPageSetSize(
   int page,
   double width,
   double height,
+  int keep,
 );
 
 @Native<Int32 Function(Pointer<Void>, Int64, Pointer<Double>)>(

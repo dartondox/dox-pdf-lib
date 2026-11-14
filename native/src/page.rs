@@ -74,18 +74,26 @@ pub fn get_box(pdf: &Document, page: ObjectId, kind: i32) -> Result<Rect> {
 }
 
 pub fn set_box(pdf: &mut Document, page: ObjectId, kind: i32, r: Rect) -> Result<()> {
+    if r.iter().any(|v| !v.is_finite()) {
+        return Err(Error::generic("a page box value is not a finite number"));
+    }
     let [x, y, w, h] = r;
     let value = Object::Array(vec![num(x), num(y), num(x + w), num(y + h)]);
     page_dict_mut(pdf, page)?.set(key(kind)?, value);
     Ok(())
 }
 
-/// pdf-lib's `setSize`. A NaN keeps that side as it is (for setWidth and
-/// setHeight). Boxes that were equal to the old media box follow it.
-pub fn set_size(pdf: &mut Document, page: ObjectId, width: f64, height: f64) -> Result<()> {
+/// `keep` bits of `set_size`: keep the width (setHeight) or the height
+/// (setWidth) as it is.
+pub const KEEP_WIDTH: i32 = 1;
+pub const KEEP_HEIGHT: i32 = 2;
+
+/// pdf-lib's `setSize`. Boxes that were equal to the old media box follow
+/// it.
+pub fn set_size(pdf: &mut Document, page: ObjectId, width: f64, height: f64, keep: i32) -> Result<()> {
     let media = get_box(pdf, page, MEDIA)?;
-    let width = if width.is_nan() { media[2] } else { width };
-    let height = if height.is_nan() { media[3] } else { height };
+    let width = if keep & KEEP_WIDTH != 0 { media[2] } else { width };
+    let height = if keep & KEEP_HEIGHT != 0 { media[3] } else { height };
     set_box(pdf, page, MEDIA, [media[0], media[1], width, height])?;
     for kind in [CROP, BLEED, TRIM, ART] {
         let has = own_box(pdf, page, kind)?.is_some();
@@ -150,10 +158,10 @@ pub extern "C" fn dox_pdf_page_set_box(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn dox_pdf_page_set_size(handle: *const c_void, page: i64, width: f64, height: f64) -> i32 {
+pub extern "C" fn dox_pdf_page_set_size(handle: *const c_void, page: i64, width: f64, height: f64, keep: i32) -> i32 {
     call(|| {
         with_doc(handle, |d| {
-            set_size(&mut d.pdf, ref_from_i64(page), width, height).map(|_| OK)
+            set_size(&mut d.pdf, ref_from_i64(page), width, height, keep).map(|_| OK)
         })
     })
 }
@@ -192,7 +200,8 @@ mod tests {
         assert_eq!(get_box(&d.pdf, p, ART).unwrap(), [0.0, 0.0, 595.28, 841.89]);
         set_box(&mut d.pdf, p, CROP, [0.0, 0.0, 595.28, 841.89]).unwrap();
         set_box(&mut d.pdf, p, TRIM, [10.0, 10.0, 50.0, 50.0]).unwrap();
-        set_size(&mut d.pdf, p, 100.0, f64::NAN).unwrap();
+        set_size(&mut d.pdf, p, 100.0, 0.0, KEEP_HEIGHT).unwrap();
+        assert!(set_size(&mut d.pdf, p, f64::NAN, 1.0, 0).is_err());
         assert_eq!(get_box(&d.pdf, p, MEDIA).unwrap(), [0.0, 0.0, 100.0, 841.89]);
         // the crop box was equal to the media box, so it follows
         assert_eq!(get_box(&d.pdf, p, CROP).unwrap(), [0.0, 0.0, 100.0, 841.89]);
