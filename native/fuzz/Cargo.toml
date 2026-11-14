@@ -1,0 +1,63 @@
+[package]
+name = "dox_pdf_lib-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# The library source of native/ is built here as an rlib. native/ itself
+# stays a cdylib only, so fuzzing does not change the shipped library.
+# Keep these dependencies the same as in native/Cargo.toml (CI checks it).
+[lib]
+name = "dox_pdf_lib"
+path = "../src/lib.rs"
+test = false
+doc = false
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+flate2 = "1.1.11"
+png = "0.18.1"
+lopdf = { version = "0.47.0", default-features = false, features = ["rayon"] }
+harfrust = "0.16.0"
+read-fonts = "0.47.0"
+subsetter = { version = "0.2.6", default-features = false }
+unicode-bidi = "0.3.18"
+
+# the source of native/ has `#[cfg(fuzzing)]`, which cargo fuzz sets
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
+# its own workspace, so it is not part of the main build
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "load"
+path = "fuzz_targets/load.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "font"
+path = "fuzz_targets/font.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "image"
+path = "fuzz_targets/image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "svg"
+path = "fuzz_targets/svg.rs"
+test = false
+doc = false
+bench = false

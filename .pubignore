@@ -1,2 +1,3 @@
 native/target/
 tool/crosscheck/
+native/fuzz/

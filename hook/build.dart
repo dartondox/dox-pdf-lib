@@ -13,11 +13,14 @@
 //        user_defines:
 //          dox_pdf_lib:
 //            lib_path: /path/to/libdox_pdf_lib.so
-// 2. A local build in `native/target/release` (for dev, same OS and CPU).
-// 3. The ready-built library from the GitHub release, checked with sha256.
-// 4. `cargo build` from source, when cargo is installed.
-// Outside the pub cache (this repo, or a path or git dependency), 4 comes
-// before 3, because the source may be newer than the release.
+// 2. From the pub cache: the ready-built library from the GitHub release,
+//    checked with sha256.
+// 3. `cargo build` from source, when cargo is installed.
+// 4. A local build in `native/target/release` (for dev without cargo, same
+//    OS and CPU).
+// 5. Outside the pub cache: the ready-built library from the release.
+// Outside the pub cache (this repo, or a path or git dependency), cargo
+// comes first, because the source may be newer than any built library.
 // When none works, no asset is added, and the build does not fail.
 // Every PDF call then fails with an error that the library is missing.
 import 'dart:io';
@@ -54,11 +57,14 @@ void main(List<String> args) async {
     // release (eg. a new ABI), so build it with cargo first.
     bool published = input.packageRoot.pathSegments.contains('hosted');
 
+    // In the repo, cargo comes before a local build in native/target: that
+    // build may be older than the source, and cargo only rebuilds what
+    // changed. The local build is used when cargo is not installed.
     Uri? lib =
         _given(input) ??
-        (host ? _local(native, fileName) : null) ??
         (published ? await _download(input, os, arch, fileName) : null) ??
         (host ? await _cargo(input, native, fileName, output) : null) ??
+        (host ? _local(native, fileName) : null) ??
         (published ? null : await _download(input, os, arch, fileName));
 
     if (lib == null) {

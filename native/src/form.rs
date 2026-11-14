@@ -2886,3 +2886,41 @@ mod tests {
         assert!(size > 4.0);
     }
 }
+
+/// Fuzzing: fills every field of a loaded file, updates the appearances
+/// and flattens, like a user filling an unknown form.
+#[cfg(fuzzing)]
+pub fn fuzz_fill(doc: &mut Doc) {
+    let mut out = [0i64; 2];
+    let mut run = |doc: &mut Doc, op: i32, field: ObjectId, n: &[f64], s: &[String]| {
+        out = [0, 0];
+        let _ = form_call(doc, op, field, n, s, &mut out);
+        if out[1] != 0 {
+            crate::ffi_util::dox_pdf_bytes_free(out[1] as *mut std::ffi::c_void);
+        }
+    };
+    run(doc, GET_FORM, (0, 0), &[], &[]);
+    let text = vec!["Fuzz 1\nทดสอบ مرحبا".to_string()];
+    for (id, kind) in all_fields(&doc.pdf) {
+        run(doc, NAME, id, &[], &[]);
+        match kind {
+            TEXT_FIELD => {
+                run(doc, TEXT_GET, id, &[], &[]);
+                run(doc, TEXT_SET, id, &[], &["Fuzz 123".to_string()]);
+            }
+            CHECK_BOX => run(doc, CHECK, id, &[], &[]),
+            RADIO_GROUP => {
+                run(doc, RADIO_OPTIONS, id, &[], &[]);
+                run(doc, RADIO_SELECT, id, &[], &text);
+            }
+            DROPDOWN | OPTION_LIST => {
+                run(doc, CHOICE_OPTIONS, id, &[], &[]);
+                run(doc, CHOICE_SELECT, id, &[0.0], &["Fuzz".to_string()]);
+            }
+            _ => {}
+        }
+        run(doc, WIDGETS, id, &[], &[]);
+    }
+    run(doc, UPDATE_APPEARANCES, (0, 0), &[0.0], &[]);
+    run(doc, FLATTEN, (0, 0), &[1.0], &[]);
+}
