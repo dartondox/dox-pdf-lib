@@ -111,7 +111,7 @@ Future<Uri?> _download(
   String? hash = _sha256[asset];
   if (hash == null) return null; // no release for this platform (yet)
 
-  // the release tag has the package version, eg. v3.2.0
+  // the release tag has the package version, eg. v0.0.1
   String pubspec = File.fromUri(input.packageRoot.resolve('pubspec.yaml'))
       .readAsStringSync();
   String version = RegExp(
