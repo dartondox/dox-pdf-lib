@@ -24,6 +24,7 @@ class _Lang {
     this.lines, {
     this.complex = false,
     this.pdfLibRender = true,
+    this.mixed = false,
   });
 
   final String font;
@@ -36,6 +37,10 @@ class _Lang {
   /// makes a space glyph that the cmap has not, and pdf-lib's full font has
   /// no width for it, so it draws it 1000 units wide.
   final bool pdfLibRender;
+
+  /// Left-to-right and right-to-left text in one line. hb-shape has no
+  /// bidi, so the words are compared one by one.
+  final bool mixed;
 }
 
 const Map<String, _Lang> _langs = <String, _Lang>{
@@ -79,6 +84,23 @@ const Map<String, _Lang> _langs = <String, _Lang>{
     'مرحبا بالعالم',
     'اللغة العربية جميلة',
   ], complex: true),
+  'Arabic mixed': _Lang(
+    'IBMPlexSansArabic-Regular.ttf',
+    <String>[
+      'السعر: 1,250.50',
+      'مرحبا 123',
+      'Order 66 وصل 2024-05-01',
+      'Hello مرحبا world',
+    ],
+    complex: true,
+    mixed: true,
+  ),
+  'Hebrew': _Lang(
+    'IBMPlexSansHebrew-Regular.ttf',
+    <String>['שלום עולם 2024', 'המחיר: 1,250.50 ₪', 'Hello שלום world'],
+    complex: true,
+    mixed: true,
+  ),
   'Hindi': _Lang('NotoSansDevanagari-Regular.ttf', <String>[
     'हिन्दी भाषा में नमस्ते',
     'क्षत्रिय विद्यालय दुनिया',
@@ -123,10 +145,17 @@ int _upem(Uint8List font) {
 }
 
 /// hb-shape's glyphs (hex, like encodeText) and the sum of the advances.
-(String, int) _hbShape(String font, String text) {
+(String, int) _hbShape(
+  String font,
+  String text, {
+  String? script,
+  String? direction,
+}) {
   ProcessResult r = Process.runSync('hb-shape', <String>[
     '--output-format=json',
     '--no-glyph-names',
+    if (script != null) '--script=$script',
+    if (direction != null) '--direction=$direction',
     '$testFontDir/$font',
     '-u',
     text.runes.map((int c) => 'U+${c.toRadixString(16)}').join(','),
@@ -144,9 +173,36 @@ int _upem(Uint8List font) {
   return ('<$hex>', advance);
 }
 
+/// The glyph ids of `<hex>`, 4 digits each.
+List<String> _ids(String hex) => <String>[
+  for (int i = 1; i + 4 < hex.length; i += 4) hex.substring(i, i + 4),
+];
+
 final RegExp _mark = RegExp(r'^\p{M}', unicode: true);
 
 String _noSpace(String s) => s.replaceAll(RegExp(r'\s'), '');
+
+final RegExp _rtl = RegExp('[\u0590-\u08FF]');
+
+/// The OpenType script of the letters of `word`, if it has letters.
+String? _script(String word) {
+  if (RegExp('[\u0600-\u06FF]').hasMatch(word)) return 'arab';
+  if (RegExp('[\u0590-\u05FF]').hasMatch(word)) return 'hebr';
+  if (RegExp('[A-Za-z]').hasMatch(word)) return 'latn';
+  return null;
+}
+
+/// The words of a mixed line: runs of Arabic, Hebrew or Latin letters (with
+/// their marks), or of digits with `.,`. Viewers place the neutral marks
+/// (`:`, `₪`, `-`) of a mixed line by their own rules (a date after an
+/// Arabic word is drawn right to left by the bidi rules, `01-05-2024`), and
+/// pdftotext drops the space where the direction changes, so only these
+/// words are compared, and all characters.
+List<String> _words(String line) =>
+    RegExp(r'[\u0600-\u06FF]+|[\u0590-\u05FF]+|[A-Za-z]+|[0-9][0-9.,]*')
+        .allMatches(line)
+        .map((Match m) => m[0]!)
+        .toList();
 
 void main() {
   late Directory tmp;
@@ -203,10 +259,33 @@ void main() {
               )
               .where((String l) => l.isNotEmpty)
               .toList();
-          expect(got.take(lang.lines.length), lang.lines);
+          if (lang.mixed) {
+            for (int i = 0; i < lang.lines.length; i++) {
+              String line = lang.lines[i];
+              expect(
+                _words(got[i])..sort(),
+                _words(line)..sort(),
+                reason: line,
+              );
+              expect(
+                _noSpace(got[i]).split('')..sort(),
+                _noSpace(line).split('')..sort(),
+                reason: line,
+              );
+            }
+          } else {
+            expect(got.take(lang.lines.length), lang.lines);
+          }
           List<String> wrapped = got.skip(lang.lines.length).toList();
           expect(wrapped.length, greaterThan(1), reason: 'the text wraps');
-          expect(_noSpace(wrapped.join()), _noSpace(lang.lines.join()));
+          if (lang.mixed) {
+            expect(
+              _noSpace(wrapped.join()).split('')..sort(),
+              _noSpace(lang.lines.join()).split('')..sort(),
+            );
+          } else {
+            expect(_noSpace(wrapped.join()), _noSpace(lang.lines.join()));
+          }
           for (String l in wrapped) {
             expect(
               _mark.hasMatch(l),
@@ -257,7 +336,44 @@ void main() {
           int upem = _upem(bytes);
           for (String t in lang.lines) {
             var (String hex, int advance) = _hbShape(lang.font, t);
-            if (!subset) expect(f.encodeText(t).toString(), hex, reason: t);
+            if (lang.mixed) {
+              // word by word, and the glyphs in any order
+              List<String> parts = t.split(RegExp('(?= )|(?<= )'));
+              List<String> ids = <String>[];
+              advance = 0;
+              for (int i = 0; i < parts.length; i++) {
+                String w = parts[i];
+                // a word with no letters (a number) takes the script of
+                // the word before it, else after it, like the layout
+                String? script =
+                    _script(w) ??
+                    parts
+                        .take(i)
+                        .toList()
+                        .reversed
+                        .map(_script)
+                        .nonNulls
+                        .firstOrNull ??
+                    parts.skip(i + 1).map(_script).nonNulls.firstOrNull;
+                var (String h, int a) = _hbShape(
+                  lang.font,
+                  w,
+                  script: script,
+                  direction: _rtl.hasMatch(w) ? 'rtl' : 'ltr',
+                );
+                ids.addAll(_ids(h));
+                advance += a;
+              }
+              if (!subset) {
+                expect(
+                  _ids(f.encodeText(t).toString())..sort(),
+                  ids..sort(),
+                  reason: t,
+                );
+              }
+            } else if (!subset) {
+              expect(f.encodeText(t).toString(), hex, reason: t);
+            }
             expect(
               f.widthOfTextAtSize(t, 16),
               closeTo(advance * 16 / upem, 1e-9),

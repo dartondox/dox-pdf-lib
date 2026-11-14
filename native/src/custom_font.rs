@@ -150,12 +150,73 @@ fn is_complex(s: Script) -> bool {
     )
 }
 
+/// A run of one direction and one script, in bytes of the text.
+#[derive(Debug, PartialEq)]
+struct Run {
+    start: usize,
+    end: usize,
+    script: Script,
+    rtl: bool,
+}
+
+fn is_weak(s: Script) -> bool {
+    matches!(s, Script::COMMON | Script::INHERITED | Script::UNKNOWN)
+}
+
+/// `text` as runs in drawn order (left to right). The direction comes from
+/// the Unicode bidi algorithm (UAX #9), so numbers and Latin words in a
+/// right-to-left text run left to right. Each direction run is split by
+/// script; spaces, digits and punctuation take the script next to them.
+fn runs(text: &str) -> Vec<Run> {
+    let info = unicode_bidi::ParagraphBidiInfo::new(text, None);
+    let (levels, bidi_runs) = info.visual_runs(0..text.len());
+    let strong = |c: char| Some(harfrust::unicode::script(c as u32)).filter(|s| !is_weak(*s));
+    let mut out = Vec::new();
+    for range in bidi_runs {
+        let rtl = levels[range.start].is_rtl();
+        // a run of only weak characters: the script before it, else after
+        let near = text[..range.start]
+            .chars()
+            .rev()
+            .find_map(strong)
+            .or_else(|| text[range.end..].chars().find_map(strong))
+            .unwrap_or(Script::COMMON);
+        let mut sub: Vec<Run> = Vec::new();
+        for (i, c) in text[range.clone()].char_indices() {
+            let (i, end) = (range.start + i, range.start + i + c.len_utf8());
+            match (sub.last_mut(), strong(c)) {
+                (Some(r), None) => r.end = end,
+                (Some(r), Some(s)) if r.script == s => r.end = end,
+                // weak characters before the first letter take its script
+                (Some(r), Some(s)) if r.script == Script::COMMON => {
+                    r.end = end;
+                    r.script = s;
+                }
+                (_, s) => sub.push(Run {
+                    start: i,
+                    end,
+                    script: s.unwrap_or(Script::COMMON),
+                    rtl,
+                }),
+            }
+        }
+        for r in sub.iter_mut().filter(|r| r.script == Script::COMMON) {
+            r.script = near;
+        }
+        if rtl {
+            sub.reverse();
+        }
+        out.extend(sub);
+    }
+    out
+}
+
 /// The glyphs of a text, and for a complex script HarfBuzz's positions:
 /// `[x advance, x offset, y offset]` in font units.
 pub struct Layout {
     pub glyphs: Vec<u16>,
     pub pos: Option<Vec<[i32; 3]>>,
-    /// Right to left: `(glyph count, text)` per cluster, in drawn order.
+    /// `(glyph count, text)` per ActualText span, in drawn order.
     pub spans: Option<Vec<(usize, String)>>,
 }
 
@@ -283,6 +344,8 @@ fn postscript_name(font: &FontRef) -> Option<String> {
 
 impl FontFile {
     pub fn parse(data: Vec<u8>) -> Result<FontFile> {
+        // one copy of the bytes, shared with harfrust
+        let data = Arc::new(data);
         let font = FontRef::new(&data).map_err(bad)?;
         let head = font.head().map_err(bad)?;
         let hhea = font.hhea().map_err(bad)?;
@@ -335,8 +398,12 @@ impl FontFile {
             cff,
             gsub: font.table_data(Tag::new(b"GSUB")).is_some(),
             packed: OnceLock::new(),
-            font: harfrust::Font::new(data.clone(), 0).ok_or_else(|| Error::generic("can not read the font"))?,
-            data: Arc::new(data),
+            font: harfrust::Font::new(
+                read_fonts::model::Blob::from(data.clone() as Arc<dyn AsRef<[u8]> + Send + Sync>),
+                0,
+            )
+            .ok_or_else(|| Error::generic("can not read the font"))?,
+            data,
         };
         Ok(file)
     }
@@ -379,6 +446,44 @@ impl FontFuncs for Funcs<'_> {
     fn nominal_glyph(&self, _: &ShaperFont, c: u32) -> Option<GlyphId> {
         Some(GlyphId::new(self.0.glyph(c) as u32))
     }
+}
+
+/// The fonts read so far in this process, for `load`. Weak, so a font is
+/// freed when no document uses it any more.
+static LOADED: Mutex<Vec<(u64, std::sync::Weak<FontFile>)>> = Mutex::new(Vec::new());
+
+/// A key for font bytes: the length and the first and last 256 KiB. A hit
+/// is checked against all bytes, so a key that two fonts share is fine.
+fn font_key(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let part = 256 * 1024;
+    bytes.len().hash(&mut h);
+    bytes[..bytes.len().min(part)].hash(&mut h);
+    bytes[bytes.len().saturating_sub(part)..].hash(&mut h);
+    h.finish()
+}
+
+/// The font of `bytes`, read once per process: a server that embeds the
+/// same font into many documents parses (and compresses) it once. Safe
+/// from many threads (isolates).
+pub fn load(bytes: &[u8]) -> Result<Arc<FontFile>> {
+    let key = font_key(bytes);
+    let lock = || LOADED.lock().unwrap_or_else(|e| e.into_inner());
+    let hit = lock()
+        .iter()
+        .filter(|(k, _)| *k == key)
+        .filter_map(|(_, w)| w.upgrade())
+        .find(|f| f.data.as_slice() == bytes);
+    if let Some(f) = hit {
+        return Ok(f);
+    }
+    // parsed without the lock: other threads do not wait for a big font
+    let file = Arc::new(FontFile::parse(bytes.to_vec())?);
+    let mut loaded = lock();
+    loaded.retain(|(_, w)| w.strong_count() > 0);
+    loaded.push((key, Arc::downgrade(&file)));
+    Ok(file)
 }
 
 /// `features` from Dart: a 4 byte tag and a 0/1 byte per feature.
@@ -496,90 +601,76 @@ impl CustomFont {
 
     /// One run of one script, shaped by harfrust with its own font
     /// functions, so the result is HarfBuzz's (`hb-shape`).
-    fn shape_run(&self, text: &str, start: usize, end: usize, script: Script) -> Result<(Buffer, bool)> {
+    fn shape_run(&self, text: &str, run: &Run) -> Result<Buffer> {
         let mut buffer = Buffer::new();
-        for (i, c) in text[start..end].char_indices() {
-            buffer.push(c as u32, (start + i) as u32);
+        for (i, c) in text[run.start..run.end].char_indices() {
+            buffer.push(c as u32, (run.start + i) as u32);
         }
-        buffer.set_pre_context(&text[..start]);
-        buffer.set_post_context(&text[end..]);
-        buffer.set_script(Some(script));
-        buffer.guess_segment_properties();
-        let rtl = buffer.direction() == Direction::RightToLeft;
+        buffer.set_pre_context(&text[..run.start]);
+        buffer.set_post_context(&text[run.end..]);
+        buffer.set_script(Some(run.script));
+        buffer.set_direction(if run.rtl {
+            Direction::RightToLeft
+        } else {
+            Direction::LeftToRight
+        });
         let plan = self.plan(buffer.direction(), buffer.script())?;
         let font = ShaperFont::new(&self.file.font);
         let options = ShapeOptions::new().plan(Some(&plan)).features(&self.features);
         harfrust::shape(&font, &mut buffer, options)
             .map_err(|e| Error::generic(format!("can not lay out text: {e:?}")))?;
-        Ok((buffer, rtl))
-    }
-
-    /// `text` split into runs of one script: `(start, end, script)` in bytes.
-    /// Common characters (spaces, digits, punctuation) join the run before
-    /// them, or the first run.
-    fn runs(text: &str) -> Vec<(usize, usize, Script)> {
-        let mut runs: Vec<(usize, usize, Script)> = Vec::new();
-        for (i, c) in text.char_indices() {
-            let s = harfrust::unicode::script(c as u32);
-            let weak = matches!(s, Script::COMMON | Script::INHERITED | Script::UNKNOWN);
-            match runs.last_mut() {
-                Some(r) if weak || r.2 == s => r.1 = i + c.len_utf8(),
-                Some(r) if matches!(r.2, Script::COMMON) => {
-                    r.1 = i + c.len_utf8();
-                    r.2 = s;
-                }
-                _ => runs.push((i, i + c.len_utf8(), if weak { Script::COMMON } else { s })),
-            }
-        }
-        runs
+        Ok(buffer)
     }
 
     fn layout_complex(&self, text: &str) -> Result<Layout> {
-        // one layout per run
-        let mut parts: Vec<Layout> = Vec::new();
-        let mut base_rtl = None;
-        for (start, end, script) in Self::runs(text) {
-            let (buffer, rtl) = self.shape_run(text, start, end, script)?;
-            base_rtl.get_or_insert(rtl);
+        let (mut glyphs, mut pos) = (Vec::new(), Vec::new());
+        let mut spans: Vec<(usize, String)> = Vec::new();
+        for run in runs(text) {
+            let buffer = self.shape_run(text, &run)?;
             let infos = buffer.glyph_infos();
             let mut starts: Vec<usize> = infos.iter().map(|g| g.cluster as usize).collect();
             starts.sort_unstable();
             starts.dedup();
+            let cluster_end = |cluster: usize| {
+                starts
+                    .get(starts.partition_point(|s| *s <= cluster))
+                    .copied()
+                    .unwrap_or(run.end)
+            };
             let mut seen = std::collections::HashSet::new();
-            let mut glyphs = Vec::with_capacity(infos.len());
+            let mut run_glyphs = Vec::with_capacity(infos.len());
             // the first glyph of a cluster gets the text of the cluster, in
             // text order: right to left, the base glyph is drawn after its
             // marks
-            let order: Vec<usize> = if rtl {
+            let order: Vec<usize> = if run.rtl {
                 (0..infos.len()).rev().collect()
             } else {
                 (0..infos.len()).collect()
             };
             for i in order {
-                let g = &infos[i];
-                let cluster = g.cluster as usize;
+                let cluster = infos[i].cluster as usize;
                 let cps = if seen.insert(cluster) {
-                    let to = starts
-                        .get(starts.partition_point(|s| *s <= cluster))
-                        .copied()
-                        .unwrap_or(end);
-                    text[cluster..to].chars().map(|c| c as u32).collect()
+                    text[cluster..cluster_end(cluster)].chars().map(|c| c as u32).collect()
                 } else {
                     Vec::new()
                 };
-                glyphs.push(self.get_glyph(g.glyph_id as u16, cps));
+                run_glyphs.push(self.get_glyph(infos[i].glyph_id as u16, cps));
             }
-            if rtl {
-                glyphs.reverse();
+            if run.rtl {
+                run_glyphs.reverse();
             }
-            let pos = buffer
-                .glyph_positions()
-                .iter()
-                .map(|p| [p.x_advance, p.x_offset, p.y_offset])
-                .collect();
-            // the clusters in drawn order, with their text
-            let mut spans: Vec<(usize, String)> = Vec::new();
+            glyphs.extend(run_glyphs);
+            pos.extend(
+                buffer
+                    .glyph_positions()
+                    .iter()
+                    .map(|p| [p.x_advance, p.x_offset, p.y_offset]),
+            );
+            // ActualText spans in drawn order: right to left one per
+            // cluster (viewers turn the line around and would turn a longer
+            // text too); left to right one per word, and one per space
             let mut last = usize::MAX;
+            let mut word = false;
             for g in infos {
                 let cluster = g.cluster as usize;
                 if cluster == last {
@@ -589,32 +680,22 @@ impl CustomFont {
                     continue;
                 }
                 last = cluster;
-                let to = starts
-                    .get(starts.partition_point(|s| *s <= cluster))
-                    .copied()
-                    .unwrap_or(end);
-                spans.push((1, text[cluster..to].to_string()));
+                let t = &text[cluster..cluster_end(cluster)];
+                let space = t.chars().all(char::is_whitespace);
+                match spans.last_mut() {
+                    Some(s) if !run.rtl && word && !space => {
+                        s.0 += 1;
+                        s.1.push_str(t);
+                    }
+                    _ => spans.push((1, t.to_string())),
+                }
+                word = !space;
             }
-            parts.push(Layout {
-                glyphs,
-                pos: Some(pos),
-                spans: Some(spans),
-            });
-        }
-        // a right-to-left text: the runs from right to left too
-        if base_rtl == Some(true) {
-            parts.reverse();
-        }
-        let (mut glyphs, mut pos, mut spans) = (Vec::new(), Vec::new(), Vec::new());
-        for p in parts {
-            glyphs.extend(p.glyphs);
-            pos.extend(p.pos.unwrap_or_default());
-            spans.extend(p.spans.unwrap_or_default());
         }
         Ok(Layout {
             glyphs,
             pos: Some(pos),
-            spans: (base_rtl == Some(true)).then_some(spans),
+            spans: Some(spans),
         })
     }
 
@@ -623,8 +704,8 @@ impl CustomFont {
     pub fn break_points(&self, text: &str) -> Result<Vec<bool>> {
         let chars: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
         let mut ok = vec![false; chars.len()];
-        for (start, end, script) in Self::runs(text) {
-            let (buffer, _) = self.shape_run(text, start, end, script)?;
+        for run in runs(text) {
+            let buffer = self.shape_run(text, &run)?;
             for g in buffer.glyph_infos() {
                 if let Ok(i) = chars.binary_search(&(g.cluster as usize)) {
                     ok[i] = true;
@@ -1252,6 +1333,42 @@ mod tests {
         assert_eq!(f.show_text("", 20.0).unwrap(), b"<> Tj");
     }
 
+    #[test]
+    fn bidi_runs_in_drawn_order() {
+        let r = |t: &str| -> Vec<(String, bool)> {
+            runs(t)
+                .into_iter()
+                .map(|r| (t[r.start..r.end].to_string(), r.rtl))
+                .collect()
+        };
+        let s = |t: &str, rtl: bool| (t.to_string(), rtl);
+        // numbers in Arabic run left to right, on the left of the word
+        assert_eq!(r("مرحبا 123"), [s("123", false), s("مرحبا ", true)]);
+        assert_eq!(r("السعر: 1,250.50"), [s("1,250.50", false), s("السعر: ", true)]);
+        // Arabic in an English line
+        assert_eq!(
+            r("Hello مرحبا world"),
+            [s("Hello ", false), s("مرحبا", true), s(" world", false)]
+        );
+        // after an Arabic letter the digits are Arabic numbers (rule W2),
+        // so the date parts go right to left, as in browsers
+        assert_eq!(
+            r("Order 66 وصل 2024-05-01"),
+            [
+                s("Order 66 ", false),
+                s("01", false),
+                s("-", true),
+                s("05", false),
+                s("-", true),
+                s("2024", false),
+                s("وصل ", true)
+            ]
+        );
+        // a digit run takes the script of the text before it
+        let rs = runs("مرحبا 123");
+        assert_eq!(rs[0].script, Script::ARABIC);
+    }
+
     /// `TTF` with its cmap replaced by `cmap`.
     fn with_cmap(cmap: &[u8]) -> Vec<u8> {
         let mut data = TTF.to_vec();
@@ -1296,6 +1413,31 @@ mod tests {
         t1[16..20].copy_from_slice(&28u32.to_be_bytes());
         t1[24..28].copy_from_slice(&1u32.to_be_bytes());
         assert_eq!(FontFile::parse(with_cmap(&t1)).unwrap().code_points().len(), 0x110000);
+    }
+
+    #[test]
+    fn a_font_is_read_once_while_it_is_used() {
+        let a = super::load(TTF).unwrap();
+        // other memory, the same bytes
+        let copy = TTF.to_vec();
+        let b = super::load(&copy).unwrap();
+        assert!(Arc::ptr_eq(&a, &b));
+        // other bytes with the same start, end and length: another font
+        let mut other = TTF.to_vec();
+        other[TTF.len() / 2] ^= 1;
+        let c = super::load(&other).unwrap();
+        assert!(!Arc::ptr_eq(&a, &c));
+        drop(c);
+        drop((a, b));
+        // freed with its last user
+        assert!(
+            LOADED
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(k, _)| *k == font_key(TTF))
+                .all(|(_, w)| w.strong_count() == 0)
+        );
     }
 
     #[test]

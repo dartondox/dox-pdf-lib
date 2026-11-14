@@ -180,6 +180,16 @@ const Map<String, (String, String)> testFonts = <String, (String, String)>{
         'f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf',
     '69975a0ac8472717870aefeab0a4d52739308d90856b9955313b2ad5e0148d68',
   ),
+  'IBMPlexSansArabic-Regular.ttf': (
+    'https://raw.githubusercontent.com/google/fonts/'
+        '29b4ec6df2522a8aee279414b78a07910b065874/ofl/ibmplexsansarabic/IBMPlexSansArabic-Regular.ttf',
+    '6f611412270a132bbac838da9259d4c68569b4175f3b3b8fa3fa36a30b56dab9',
+  ),
+  'IBMPlexSansHebrew-Regular.ttf': (
+    'https://raw.githubusercontent.com/google/fonts/'
+        '29b4ec6df2522a8aee279414b78a07910b065874/ofl/ibmplexsanshebrew/IBMPlexSansHebrew-Regular.ttf',
+    'c11df42adf5e2c6e77e623dbedbe8cc23ba72196ac9ad8beb02754eebd9c400a',
+  ),
 };
 
 const String testFontDir = '.dart_tool/test_fonts';

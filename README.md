@@ -94,8 +94,11 @@ The font is read once; a subset is made when you save. A subset of a big CJK fon
 Use `subset: true` for big fonts, eg. CJK fonts. Without it, the whole font goes into the file: a 16 MB font makes a 14 MB PDF, and the first save takes about 0.4 s to compress it.
 
 Custom fonts work in form fields too: `form.updateFieldAppearances(font)`, `field.updateAppearances(font)` and `addToPage(page, font: font)`.
+Use `subset: false` for a font of fillable fields that people will edit in a PDF viewer: a subset has only the glyphs of the text at save, so the viewer can not draw other letters that people type.
 
-Tested languages, with full and subset fonts (`test/language_test.dart`): English, German, Vietnamese, Japanese, Chinese, Korean, Thai, Myanmar, Khmer, Arabic and Hindi. Copy and paste (`pdftotext`) gives the text back in all of them.
+A font file is read once per process: embedding the same bytes into another document reuses it (about 1 ms for a 16 MB font). It is freed when no document uses it.
+
+Tested languages, with full and subset fonts (`test/language_test.dart`): English, German, Vietnamese, Japanese, Chinese, Korean, Thai, Myanmar, Khmer, Arabic (also with numbers and English), Hebrew and Hindi. Copy and paste (`pdftotext`) gives the text back in all of them.
 
 Differences from pdf-lib:
 
@@ -104,7 +107,8 @@ Differences from pdf-lib:
 - The ToUnicode CMap of a full font also has these glyphs, so copy and paste works for them.
 - The `BaseFont` name is `<PostScript name>-<n>`; pdf-lib adds a random number.
 - Text layout uses harfrust (HarfBuzz in Rust). It gives the same glyphs as fontkit for normal text.
-- Complex scripts are laid out like HarfBuzz (`hb-shape`), not like fontkit. fontkit can not lay out some of them right (eg. Thai, Myanmar) or at all (Khmer). Their widths are HarfBuzz's advances, and `drawText` places each glyph where HarfBuzz puts it (`TJ`, `Ts`), so marks sit in the right place. Their text is in `/ActualText` spans, so copy and paste gives the text.
+- Right-to-left text (Arabic, Hebrew) with numbers or Latin words is ordered with the Unicode bidi algorithm (UAX #9), like a browser. pdf-lib draws the whole line right to left, so numbers come out reversed.
+- Complex scripts are laid out like HarfBuzz (`hb-shape`), not like fontkit. fontkit can not lay out some of them right (eg. Thai, Myanmar) or at all (Khmer). Their widths are HarfBuzz's advances, and `drawText` places each glyph where HarfBuzz puts it (`TJ`, `Ts`), so marks sit in the right place. Their text is in `/ActualText` spans (one per word, one per letter in right-to-left text), so copy and paste gives the text.
 - With `wordBreaks: ['']`, a line never breaks between a letter and its marks. pdf-lib breaks between any two characters.
 - Font collections (`.ttc`), WOFF and CFF2 (variable OpenType) fonts are not supported. A variable TrueType font uses its default instance, like fontkit.
 

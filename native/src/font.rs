@@ -10,11 +10,11 @@
 
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use lopdf::{Dictionary, Object, ObjectId};
 
-use crate::custom_font::{CustomFont, FontFile, parse_features};
+use crate::custom_font::{CustomFont, parse_features};
 use crate::document::{ref_from_i64, ref_to_i64};
 use crate::ffi_util::*;
 
@@ -404,7 +404,7 @@ pub extern "C" fn dox_pdf_embed_font(
     vertical: *mut f64,
 ) -> i32 {
     call(|| {
-        let file = Arc::new(FontFile::parse(slice(data, data_len)?.to_vec())?);
+        let file = crate::custom_font::load(slice(data, data_len)?)?;
         let custom = String::from_utf8_lossy(slice(name, name_len)?).into_owned();
         let features = parse_features(slice(features, features_len)?);
         // a new object: other documents' embed caches must see it

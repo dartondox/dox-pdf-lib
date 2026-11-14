@@ -20,6 +20,8 @@ harfrust = "0.16.0"
 read-fonts = "0.47.0"
 # subsetter: font subsets for embedFont(subset: true), from typst
 subsetter = { version = "0.2.6", default-features = false }
+# unicode-bidi: the order of right-to-left and left-to-right runs (UAX #9)
+unicode-bidi = "0.3.18"
 
 [profile.release]
 opt-level = 3
