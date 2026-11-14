@@ -1402,3 +1402,11 @@ mod tests {
         assert!(e.message.contains("WinAnsi cannot encode"));
     }
 }
+
+/// Fuzzing: the SVG path parser and its operators.
+#[cfg(fuzzing)]
+pub fn fuzz_svg(path: &str) -> usize {
+    let mut o = Ops(Vec::new());
+    let _ = svg_path(path, &mut o);
+    o.0.len()
+}

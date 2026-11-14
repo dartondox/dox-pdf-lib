@@ -45,14 +45,14 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: lts/*
-      # the build is kept: the Dart build hook uses native/target/release
+      # the library for the Dart tests is built by the Dart build hook
+      # (cargo, in its own target folder), so there is no build step here
       - name: Rust checks
         working-directory: native
         run: |
           cargo fmt --check
           cargo clippy --release --all-targets -- -D warnings
           cargo test --release
-          cargo build --release
       - name: Dart checks
         run: |
           dart pub get

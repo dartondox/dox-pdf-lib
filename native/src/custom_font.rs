@@ -182,6 +182,11 @@ fn is_weak(s: Script) -> bool {
 /// `rtl` is the direction of the paragraph (`paragraph_rtl`) that `text` is
 /// a line of; `None` takes it from `text`.
 fn runs(text: &str, rtl: Option<bool>) -> Vec<Run> {
+    // unicode-bidi panics on an empty line (an index out of bounds), and
+    // a panic leaves the document broken. Empty text has no runs.
+    if text.is_empty() {
+        return Vec::new();
+    }
     let level = rtl.map(|r| {
         if r {
             unicode_bidi::Level::rtl()
@@ -1371,6 +1376,9 @@ mod tests {
                 .collect()
         };
         let s = |t: &str, rtl: bool| (t.to_string(), rtl);
+        // empty text has no runs (unicode-bidi panics on it; found by fuzzing)
+        assert!(runs("", None).is_empty());
+        assert!(runs("", Some(true)).is_empty());
         // numbers in Arabic run left to right, on the left of the word
         assert_eq!(r("مرحبا 123"), [s("123", false), s("مرحبا ", true)]);
         assert_eq!(r("السعر: 1,250.50"), [s("1,250.50", false), s("السعر: ", true)]);

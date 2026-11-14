@@ -23,6 +23,10 @@ subsetter = { version = "0.2.6", default-features = false }
 # unicode-bidi: the order of right-to-left and left-to-right runs (UAX #9)
 unicode-bidi = "0.3.18"
 
+# cargo fuzz builds with `--cfg fuzzing`, see src/fuzz.rs
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
 [profile.release]
 opt-level = 3
 lto = "fat"

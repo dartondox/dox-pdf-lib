@@ -1,0 +1,116 @@
+//! Entry points of the fuzz targets in `fuzz/` (built with `cfg(fuzzing)`
+//! only). Each one runs untrusted bytes through the same code a Dart call
+//! runs. Errors are fine; a crash, a hang or a huge allocation is a bug.
+//! A file we write must load again, so that is checked too.
+
+use crate::custom_font::{self, CustomFont};
+use crate::document::{self, LOAD_IGNORE_ENCRYPTION, SAVE_ADD_DEFAULT_PAGE, SAVE_UPDATE_FIELD_APPEARANCES};
+use crate::embed::{self, Request};
+use crate::{attachment, draw, form, image, metadata, page};
+
+const NOW: &[u8] = b"D:20260101000000Z";
+
+/// A PDF file: read everything, fill and flatten the form, embed its pages,
+/// save, and load the result again.
+pub fn load(data: &[u8]) {
+    let Ok(mut doc) = document::load(data, LOAD_IGNORE_ENCRYPTION, NOW) else {
+        return;
+    };
+    let Ok(pages) = document::page_entries(&doc.pdf) else {
+        return;
+    };
+    for p in &pages {
+        for kind in 0..5 {
+            let _ = page::get_box(&doc.pdf, p.id, kind);
+        }
+        let _ = page::get_rotation(&doc.pdf, p.id);
+    }
+    for key in [&b"Title"[..], b"Author", b"CreationDate", b"Keywords"] {
+        let _ = metadata::get(&doc.pdf, key);
+    }
+    let _ = attachment::list(&doc.pdf);
+    form::fuzz_fill(&mut doc);
+    let reqs: Vec<Request> = pages
+        .iter()
+        .take(2)
+        .map(|p| Request {
+            page: p.id,
+            bbox: None,
+            matrix: None,
+        })
+        .collect();
+    let _ = embed::embed_own(&mut doc, &reqs);
+    // the same two steps as `dox_pdf_save`
+    let flags = SAVE_ADD_DEFAULT_PAGE | SAVE_UPDATE_FIELD_APPEARANCES;
+    let Ok(pdf) = document::prepare_save(&mut doc, flags) else {
+        return;
+    };
+    let Ok(out) = document::write(pdf, flags) else {
+        return;
+    };
+    // what we write must load again
+    let again = document::load(&out, LOAD_IGNORE_ENCRYPTION, NOW);
+    assert!(
+        again.is_ok(),
+        "our own output does not load: {:?}",
+        again.err().map(|e| e.message)
+    );
+}
+
+/// A font file: lay out text in many scripts, measure, wrap, and write the
+/// font (full and subset) into a PDF.
+pub fn font(data: &[u8]) {
+    let Ok(file) = custom_font::load(data) else {
+        return;
+    };
+    let texts = [
+        "Hello, world! ffi fl 123",
+        "Grüße ẞ ÄÖÜ",
+        "Tiếng Việt",
+        "日本語のテキスト、カタカナ",
+        "한국어 텍스트",
+        "ภาษาไทย น้ำ ค่ำ",
+        "မြန်မာဘာသာ",
+        "ភាសាខ្មែរ",
+        "مرحبا 123 world",
+        "हिन्दी पाठ",
+        "😀 \u{200d}\u{0301}",
+        "",
+    ];
+    for subset in [true, false] {
+        let f = CustomFont::new(file.clone(), subset, "Fuzz".to_string(), Vec::new());
+        for t in texts {
+            let _ = f.layout(t);
+            let _ = f.width_of_text(t, 12.0);
+            let _ = f.break_points(t);
+            let _ = f.encode(t);
+            let _ = f.show_text(t, 12.0, None);
+            let _ = f.show_text(t, 12.0, Some(true));
+        }
+        let mut pdf = lopdf::Document::with_version("1.7");
+        let id = pdf.new_object_id();
+        let _ = f.write(&mut pdf, id);
+    }
+}
+
+/// An image: the first byte picks JPEG or PNG.
+pub fn image(data: &[u8]) {
+    let Some((&pick, data)) = data.split_first() else {
+        return;
+    };
+    let mut pdf = lopdf::Document::with_version("1.7");
+    if pick & 1 == 0 {
+        let _ = image::embed_jpg(&mut pdf, data);
+    } else if image::png_decoded_size(data).is_ok()
+        && let Ok(png) = image::decode_png(data)
+    {
+        image::add_png(&mut pdf, png);
+    }
+}
+
+/// An SVG path string.
+pub fn svg(data: &[u8]) {
+    if let Ok(path) = std::str::from_utf8(data) {
+        draw::fuzz_svg(path);
+    }
+}
