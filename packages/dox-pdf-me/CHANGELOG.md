@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.2
 
 - PDF417 has the same modules as in pdfme. The `barcode` package picked
   other columns, rows and codewords, so the code was wider and lower than
