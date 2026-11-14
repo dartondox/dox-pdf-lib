@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dox_pdf_lib/dox_pdf_lib.dart';
-import 'package:dox_pdf_me/dox_pdf_me.dart' show builtInPlugins, generate;
+import 'package:dox_pdf_me/dox_pdf_me.dart' show builtInPlugins;
 import 'package:dox_pdf_me/src/barcodes/barcode_fit_layout.dart';
 import 'package:dox_pdf_me/src/barcodes/barcode_painter.dart';
 import 'package:dox_pdf_me/src/barcodes/barcode_plugin.dart';
@@ -15,8 +15,11 @@ import 'package:dox_pdf_me/src/barcodes/matrix_symbols.dart';
 import 'package:dox_pdf_me/src/fonts/font_store.dart';
 import 'package:dox_pdf_me/src/options.dart';
 import 'package:dox_pdf_me/src/plugin.dart';
+import 'package:dox_pdf_me/src/raw_props.dart';
 import 'package:dox_pdf_me/src/schema.dart';
 import 'package:test/test.dart';
+
+import 'support.dart';
 
 void _valid(String type, List<String> good, List<String> bad) {
   for (String v in good) {
@@ -287,7 +290,7 @@ void main() {
       Map<String, dynamic> m = c! as Map<String, dynamic>;
       String? message;
       try {
-        await generate(
+        await generateJson(
           template: <String, dynamic>{
             'basePdf': <String, dynamic>{
               'width': 100,
@@ -420,7 +423,7 @@ void main() {
     });
   });
 
-  group('BarcodePlugin renders a PDF', () {
+  group('BarcodeDrawer renders a PDF', () {
     const Map<String, String> values = <String, String>{
       'qrcode': 'https://pdfme.com/',
       'japanpost': '10000131-3-2-B503',
@@ -438,14 +441,14 @@ void main() {
 
     Future<Uint8List> render(
       List<(String, String, Map<String, dynamic>)> items, {
-      String? colorType,
+      ColorType? colorType,
     }) async {
       PDFDocument doc = await PDFDocument.create();
       PDFPage page = doc.addPage(<double>[595.28, 841.89]);
-      Map<Object, Object?> cache = <Object, Object?>{};
+      RenderCache cache = RenderCache();
       int i = 0;
       for ((String, String, Map<String, dynamic>) item in items) {
-        Schema schema = Schema(<String, dynamic>{
+        RawSchema schema = RawSchema(<String, dynamic>{
           'name': 'b$i',
           'type': item.$1,
           'position': <String, dynamic>{
@@ -457,8 +460,8 @@ void main() {
           ...item.$3,
         });
         i++;
-        await BarcodePlugin(item.$1).pdf(
-          RenderProps(
+        await BarcodeDrawer(item.$1).draw(
+          RawProps(
             value: item.$2,
             schema: schema,
             basePdf: null,
@@ -513,7 +516,7 @@ void main() {
     test('cmyk colors', () async {
       Uint8List pdf = await render(<(String, String, Map<String, dynamic>)>[
         ('code128', 'ABC-123', <String, dynamic>{'barColor': '#ff0000'}),
-      ], colorType: 'cmyk');
+      ], colorType: ColorType.cmyk);
       expect(_content(pdf), contains('0 1 1 0 K'));
     });
 

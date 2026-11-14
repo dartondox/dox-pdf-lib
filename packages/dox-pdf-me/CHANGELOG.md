@@ -1,5 +1,75 @@
 ## Unreleased
 
+- **Breaking: a typed API.** Each schema type has its own class with
+  typed fields and the pdfme defaults: `TextSchema`, `BarcodeSchema` (with
+  `BarcodeType.qrcode`, ...), `TableSchema`, and so on. Fixed choices are
+  enums (`Alignment`, `VerticalAlignment`, `ObjectFit`, ...). You can now
+  build a template in Dart with no frontend.
+  - `generate` takes a `Template`, not a `Map`. Read pdfme JSON with
+    `Template.fromJson(json)` (both pdfme formats, like before).
+  - `inputs` is a `List<Map<String, String>>`. Every pdfme input is a
+    string. A table takes a JSON string of rows: use `jsonEncode(rows)`.
+    A list or a map as input is no longer taken.
+  - `options` is a `GenerateOptions`. Read the pdfme options JSON with
+    `GenerateOptions.fromJson(json)`. `colorType` is a `ColorType` enum,
+    and `extra` is gone.
+  - `Template.basePdf` is a `BasePdf`: `BlankPdf(width, height, padding,
+    staticSchema)` or `PdfFile(bytes)`.
+  - A plugin is a `SchemaPlugin<S>`. It names its own schema class and
+    reads it from JSON (`fromJson`), and `pdf` gets a `RenderProps<S>`
+    with the typed schema. `RenderProps.cache` is a `RenderCache`.
+  - Plugin renames: `ShapePlugin.rectangle()` is `RectanglePlugin()`,
+    `ShapePlugin.ellipse()` is `EllipsePlugin()`, `DatePlugin.date()`,
+    `.time()` and `.dateTime()` are `DatePlugin()`, `TimePlugin()` and
+    `DateTimePlugin()`, and `BarcodePlugin('qrcode')` is
+    `BarcodePlugin(BarcodeType.qrcode)`.
+  - `toJson()` and `fromJson()` on every schema. A schema read from JSON
+    keeps its map, so `toJson()` gives the designer JSON back with no
+    change, also keys this package does not know.
+
+  Before:
+
+  ```dart
+  await generate(
+    template: <String, dynamic>{
+      'basePdf': <String, dynamic>{'width': 210, 'height': 297, 'padding': <int>[10, 10, 10, 10]},
+      'schemas': <List<Map<String, dynamic>>>[
+        <Map<String, dynamic>>[
+          <String, dynamic>{'name': 'title', 'type': 'text', 'position': <String, num>{'x': 20, 'y': 20}, 'width': 170, 'height': 15},
+        ],
+      ],
+    },
+    inputs: <Map<String, dynamic>>[<String, dynamic>{'title': 'Hello'}],
+    options: <String, dynamic>{'lang': 'en'},
+  );
+  ```
+
+  After:
+
+  ```dart
+  await generate(
+    template: Template(
+      basePdf: const BlankPdf(),
+      schemas: <List<Schema>>[
+        <Schema>[
+          const TextSchema(name: 'title', position: Position(20, 20), width: 170, height: 15),
+        ],
+      ],
+    ),
+    inputs: <Map<String, String>>[<String, String>{'title': 'Hello'}],
+    options: GenerateOptions(lang: 'en'),
+  );
+
+  // or, with the pdfme JSON:
+  await generate(
+    template: Template.fromJson(json),
+    inputs: <Map<String, String>>[<String, String>{'title': 'Hello'}],
+    options: GenerateOptions.fromJson(optionsJson),
+  );
+  ```
+- A deeply nested list as a table input could overflow the stack in
+  `generate` (it was turned into JSON there). Inputs are strings now, so
+  this path is gone.
 - New `table` schema type (`TablePlugin`, in `builtInPlugins` as `Table`).
   The value is a JSON string of rows. It has the props and defaults of
   pdfme: head, column widths, table, head, body and column styles.

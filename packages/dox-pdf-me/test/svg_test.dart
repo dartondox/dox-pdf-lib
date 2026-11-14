@@ -6,6 +6,7 @@ import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 import 'package:dox_pdf_me/src/fonts/font_store.dart';
 import 'package:dox_pdf_me/src/options.dart';
 import 'package:dox_pdf_me/src/plugin.dart';
+import 'package:dox_pdf_me/src/raw_props.dart';
 import 'package:dox_pdf_me/src/schema.dart';
 import 'package:dox_pdf_me/src/svg/svg_aspect.dart';
 import 'package:dox_pdf_me/src/svg/svg_color.dart';
@@ -67,7 +68,7 @@ int count(String text, String part) => part.allMatches(text).length;
 
 /// A page of 100 x 100 mm with one schema drawn by [plugin].
 Future<PDFDocument> renderSchema(
-  SchemaPlugin plugin,
+  RawDrawer plugin,
   String value,
   Map<String, dynamic> schema, {
   GenerateOptions? options,
@@ -75,10 +76,10 @@ Future<PDFDocument> renderSchema(
   PDFDocument doc = await PDFDocument.create();
   PDFPage page = doc.addPage(<double>[283.46, 283.46]);
   GenerateOptions o = options ?? GenerateOptions();
-  await plugin.pdf(
-    RenderProps(
+  await plugin.draw(
+    RawProps(
       value: value,
-      schema: Schema(<String, dynamic>{
+      schema: RawSchema(<String, dynamic>{
         'name': 'f',
         'type': plugin.type,
         ...schema,
@@ -88,7 +89,7 @@ Future<PDFDocument> renderSchema(
       page: page,
       options: o,
       fonts: FontStore(doc, o.font),
-      cache: <Object, Object?>{},
+      cache: RenderCache(),
     ),
   );
   return doc;
@@ -595,7 +596,7 @@ void main() {
 
   group('fonts', () {
     test('selectFontNames picks the best font per text', () {
-      Set<String> names = SvgPlugin.selectFontNames(
+      Set<String> names = SvgDrawer.selectFontNames(
         '<svg><g font-weight="700"><text font-family="Missing, Brand">A'
         '</text></g><text style="font-family: Other">B</text></svg>',
         <String>['Brand', 'Brand_bold', 'Other Sans'],
@@ -605,7 +606,7 @@ void main() {
 
     test('a text draws with the selected font', () async {
       PDFDocument doc = await renderSchema(
-        const SvgPlugin(),
+        const SvgDrawer(),
         '<svg width="10" height="10"><text font-family="BrandFont" '
         'font-weight="700" y="8">A</text></svg>',
         <String, dynamic>{
@@ -627,7 +628,7 @@ void main() {
     test('svg skips values without <svg and </svg>', () async {
       for (String v in <String>['', '<svg/>', 'hello']) {
         PDFDocument doc = await renderSchema(
-          const SvgPlugin(),
+          const SvgDrawer(),
           v,
           <String, dynamic>{'width': 10, 'height': 10},
         );
@@ -637,7 +638,7 @@ void main() {
 
     test('svg rotation wraps the drawing around the box center', () async {
       PDFDocument doc = await renderSchema(
-        const SvgPlugin(),
+        const SvgDrawer(),
         '<svg width="10" height="10"><rect width="10" height="10" '
         'fill="#112233"/></svg>',
         <String, dynamic>{
@@ -659,7 +660,7 @@ void main() {
 
     test('checkbox icon follows pdfme', () {
       expect(
-        CheckboxPlugin.icon(true, '#000000'),
+        CheckboxDrawer.icon(true, '#000000'),
         '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" '
         'viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2" '
         'stroke-linecap="round" stroke-linejoin="round">'
@@ -668,10 +669,10 @@ void main() {
       );
       // pdfme's default stroke: `currentColor` (black)
       expect(
-        CheckboxPlugin.icon(false, null),
+        CheckboxDrawer.icon(false, null),
         contains('stroke="currentColor"'),
       );
-      expect(RadioGroupPlugin.icon(true, 'red'), contains('r="1"'));
+      expect(RadioGroupDrawer.icon(true, 'red'), contains('r="1"'));
     });
   });
 
@@ -685,7 +686,7 @@ void main() {
 
     test('svg shapes land in the box', () async {
       PDFDocument doc = await renderSchema(
-        const SvgPlugin(),
+        const SvgDrawer(),
         '<svg width="10" height="10" viewBox="0 0 10 10">'
         '<rect x="0" y="0" width="5" height="10" fill="red"/>'
         '<circle cx="7.5" cy="5" r="2" fill="#0000ff"/></svg>',
@@ -703,7 +704,7 @@ void main() {
       // height (1 mm per unit) and the clip cuts the rest; a correct meet
       // would scale by 0.4 and leave the top and bottom white.
       PDFDocument doc = await renderSchema(
-        const SvgPlugin(),
+        const SvgDrawer(),
         '<svg viewBox="0 0 100 10"><rect width="50" height="10" fill="red"/>'
         '</svg>',
         box(0, 0, 40, 10),
@@ -715,7 +716,7 @@ void main() {
 
     test('nested svg clips; transforms move shapes', () async {
       PDFDocument doc = await renderSchema(
-        const SvgPlugin(),
+        const SvgDrawer(),
         '<svg width="100" height="100" viewBox="0 0 100 100">'
         '<svg x="0" y="0" width="50" height="50" viewBox="0 0 50 50">'
         '<rect width="100" height="100" fill="red"/></svg>'
@@ -734,7 +735,7 @@ void main() {
 
     test('svg rotation turns the drawing', () async {
       PDFDocument doc = await renderSchema(
-        const SvgPlugin(),
+        const SvgDrawer(),
         '<svg viewBox="0 0 40 10" preserveAspectRatio="none">'
         '<rect width="40" height="10" fill="red"/></svg>',
         <String, dynamic>{...box(30, 45, 40, 10), 'rotate': 90},
@@ -747,7 +748,7 @@ void main() {
 
     test('image: a data URL png fills its box', () async {
       PDFDocument doc = await renderSchema(
-        const SvgPlugin(),
+        const SvgDrawer(),
         '<svg width="20" height="20" viewBox="0 0 20 20">'
         '<image x="10" y="0" width="10" height="20" '
         'href="ignored" xlink:href="${pngDataUrl(2, 2, <int>[255, 0, 0])}" '
@@ -768,18 +769,18 @@ void main() {
         'color': '#ff0000',
       };
       Raster on = await Raster.of(
-        await renderSchema(const CheckboxPlugin(), 'true', s),
+        await renderSchema(const CheckboxDrawer(), 'true', s),
       );
       expect(on.isRed(mm(10 + 12), mm(10 + 3)), isTrue);
       // on the check mark: from (8,12) to (10.5,14.5)
       expect(on.isRed(mm(10 + 10.5), mm(10 + 14.5)), isTrue);
       Raster off = await Raster.of(
-        await renderSchema(const CheckboxPlugin(), 'TRUE', s),
+        await renderSchema(const CheckboxDrawer(), 'TRUE', s),
       );
       expect(off.isRed(mm(10 + 12), mm(10 + 3)), isTrue);
       expect(off.isWhite(mm(10 + 10.5), mm(10 + 14.5)), isTrue);
       Raster none = await Raster.of(
-        await renderSchema(const CheckboxPlugin(), 'true', box(10, 10, 24, 24)),
+        await renderSchema(const CheckboxDrawer(), 'true', box(10, 10, 24, 24)),
       );
       // no color: pdfme draws it black (`currentColor`)
       expect(none.isWhite(mm(10 + 12), mm(10 + 3)), isFalse);
@@ -792,12 +793,12 @@ void main() {
         'color': '#ff0000',
       };
       Raster on = await Raster.of(
-        await renderSchema(const RadioGroupPlugin(), 'true', s),
+        await renderSchema(const RadioGroupDrawer(), 'true', s),
       );
       expect(on.isRed(mm(10 + 12), mm(10 + 2)), isTrue);
       expect(on.isRed(mm(10 + 12), mm(10 + 12)), isTrue);
       Raster off = await Raster.of(
-        await renderSchema(const RadioGroupPlugin(), '', s),
+        await renderSchema(const RadioGroupDrawer(), '', s),
       );
       expect(off.isRed(mm(10 + 12), mm(10 + 2)), isTrue);
       expect(off.isWhite(mm(10 + 12), mm(10 + 12)), isTrue);

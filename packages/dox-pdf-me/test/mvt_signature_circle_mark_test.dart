@@ -3,12 +3,16 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dox_pdf_me/dox_pdf_me.dart';
+import 'package:dox_pdf_me/src/schema.dart';
+import 'package:dox_pdf_me/src/text/multi_variable_text_plugin.dart';
 import 'package:test/test.dart';
 
-typedef Mvt = MultiVariableTextPlugin;
+import 'support.dart';
 
-Schema mvt(String text, List<String> variables, [Map<String, dynamic>? p]) =>
-    Schema(<String, dynamic>{
+typedef Mvt = MultiVariableTextDrawer;
+
+RawSchema mvt(String text, List<String> variables, [Map<String, dynamic>? p]) =>
+    RawSchema(<String, dynamic>{
       'name': 'm',
       'type': 'multiVariableText',
       'text': text,
@@ -20,7 +24,7 @@ Future<String> pdfText(
   Map<String, dynamic> schema,
   Map<String, dynamic> input,
 ) async {
-  Uint8List bytes = await generate(
+  Uint8List bytes = await generateJson(
     template: <String, dynamic>{
       'basePdf': <String, dynamic>{
         'width': 210,
@@ -143,7 +147,7 @@ void main() {
 
   group('multiVariableText validateVariables', () {
     test('missing or null variable gives false', () {
-      Schema s = mvt('{a} {b}', <String>['a', 'b']);
+      RawSchema s = mvt('{a} {b}', <String>['a', 'b']);
       expect(Mvt.validateVariables('{"a":"1","b":""}', s), isTrue);
       expect(Mvt.validateVariables('{"a":"1"}', s), isFalse);
       expect(Mvt.validateVariables('{"a":"1","b":null}', s), isFalse);
@@ -152,7 +156,11 @@ void main() {
     });
 
     test('required throws for a missing variable', () {
-      Schema s = mvt('{a}', <String>['a'], <String, dynamic>{'required': true});
+      RawSchema s = mvt(
+        '{a}',
+        <String>['a'],
+        <String, dynamic>{'required': true},
+      );
       expect(() => Mvt.validateVariables('{}', s), throwsArgumentError);
     });
 
@@ -166,7 +174,7 @@ void main() {
 
   group('multiVariableText readOnly', () {
     test('content holds the values', () {
-      Schema s = mvt(
+      RawSchema s = mvt(
         'Hi {a}',
         <String>['a'],
         <String, dynamic>{'readOnly': true, 'content': '{"a":"Ann"}'},
@@ -175,7 +183,7 @@ void main() {
     });
 
     test('contentSnapshot draws the content', () {
-      Schema s = mvt(
+      RawSchema s = mvt(
         'Hi {a}',
         <String>['a'],
         <String, dynamic>{
@@ -188,14 +196,14 @@ void main() {
     });
 
     test('no variables: the text as it is', () {
-      Schema s = mvt('Static {x}', <String>[], <String, dynamic>{
+      RawSchema s = mvt('Static {x}', <String>[], <String, dynamic>{
         'readOnly': true,
       });
       expect(Mvt.readOnlyText(s, ''), 'Static {x}');
     });
 
     test('content that is not JSON is drawn', () {
-      Schema s = mvt(
+      RawSchema s = mvt(
         'Hi {a}',
         <String>['a'],
         <String, dynamic>{'readOnly': true, 'content': 'plain'},

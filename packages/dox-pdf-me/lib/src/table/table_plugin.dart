@@ -1,4 +1,4 @@
-import '../plugin.dart';
+import '../raw_props.dart';
 import '../schema.dart';
 import '../schemas/image_plugin.dart';
 import '../schemas/shape_plugins.dart';
@@ -22,20 +22,20 @@ import 'table_layout.dart';
 /// On a blank base PDF a long table grows, moves the schemas below it
 /// down, and goes on over new pages (see `generate`). Like pdfme, the table
 /// is not turned (`rotate`) and has no `opacity`.
-class TablePlugin extends SchemaPlugin {
-  const TablePlugin();
+class TableDrawer implements RawDrawer {
+  const TableDrawer();
 
   @override
   String get type => 'table';
 
-  static const TextPlugin _text = TextPlugin();
-  static const LinePlugin _line = LinePlugin();
-  static const ShapePlugin _rectangle = ShapePlugin.rectangle();
-  static const ImagePlugin _image = ImagePlugin();
+  static const TextDrawer _text = TextDrawer();
+  static const LineDrawer _line = LineDrawer();
+  static const ShapeDrawer _rectangle = ShapeDrawer.rectangle();
+  static const ImageDrawer _image = ImageDrawer();
 
   @override
-  Future<void> pdf(RenderProps props) async {
-    Schema schema = props.schema;
+  Future<void> draw(RawProps props) async {
+    RawSchema schema = props.schema;
     List<List<String>> body = tableBodyPart(
       parseTableBody(props.value),
       schema,
@@ -69,9 +69,9 @@ class TablePlugin extends SchemaPlugin {
     Object? lineColor = tableStyles['borderColor'];
     if (lineWidth is! num || lineWidth == 0) return;
     if (lineColor is! String || lineColor.isEmpty) return;
-    await _rectangle.pdf(
+    await _rectangle.draw(
       props.copyWith(
-        schema: Schema(<String, dynamic>{
+        schema: RawSchema(<String, dynamic>{
           'name': '',
           'type': 'rectangle',
           'borderWidth': lineWidth,
@@ -88,7 +88,7 @@ class TablePlugin extends SchemaPlugin {
   /// pdfme's cell plugin: the background, the 4 border lines, then the
   /// text in the box without border and padding.
   Future<void> _cell(
-    RenderProps props,
+    RawProps props,
     TableCell cell,
     double x,
     double y,
@@ -98,13 +98,13 @@ class TablePlugin extends SchemaPlugin {
     double width = cell.width;
     BoxSides border = BoxSides.fromJson(style['borderWidth']);
     BoxSides padding = BoxSides.fromJson(style['padding']);
-    Schema box(
+    RawSchema box(
       double bx,
       double by,
       double bw,
       double bh,
       Map<String, dynamic> extra,
-    ) => Schema(<String, dynamic>{
+    ) => RawSchema(<String, dynamic>{
       ...style,
       'name': '',
       'position': <String, double>{'x': bx, 'y': by},
@@ -112,7 +112,7 @@ class TablePlugin extends SchemaPlugin {
       'height': bh,
       ...extra,
     });
-    await _rectangle.pdf(
+    await _rectangle.draw(
       props.copyWith(
         schema: box(x, y, width, height, <String, dynamic>{
           'type': 'rectangle',
@@ -126,13 +126,13 @@ class TablePlugin extends SchemaPlugin {
       'type': 'line',
       'color': style['borderColor'],
     };
-    for (Schema s in <Schema>[
+    for (RawSchema s in <RawSchema>[
       box(x, y, width, border.top, line),
       box(x + width - border.right, y, border.right, height, line),
       box(x, y + height - border.bottom, width, border.bottom, line),
       box(x, y, border.left, height, line),
     ]) {
-      await _line.pdf(props.copyWith(schema: s));
+      await _line.draw(props.copyWith(schema: s));
     }
     double left = border.left + padding.left;
     double top = border.top + padding.top;
@@ -144,10 +144,10 @@ class TablePlugin extends SchemaPlugin {
       // URL draws no image; an image that fails to embed is skipped
       if (cell.raw.isEmpty || tableImageSize(cell.raw) == null) return;
       try {
-        await _image.pdf(
+        await _image.draw(
           props.copyWith(
             value: cell.raw,
-            schema: Schema(<String, dynamic>{
+            schema: RawSchema(<String, dynamic>{
               'name': '',
               'type': 'image',
               'content': cell.raw,
@@ -169,7 +169,7 @@ class TablePlugin extends SchemaPlugin {
       }
       return;
     }
-    await _text.pdf(
+    await _text.draw(
       props.copyWith(
         value: cell.raw,
         schema: box(

@@ -13,7 +13,7 @@ class PlaceholderResolver {
   PlaceholderResolver({required this.schemas, required this.variables});
 
   /// All page schemas of the template.
-  final List<Schema> schemas;
+  final List<RawSchema> schemas;
 
   /// The input, `totalPages` and `currentPage`.
   final Map<String, dynamic> variables;
@@ -23,7 +23,7 @@ class PlaceholderResolver {
   );
 
   /// pdfme's `resolveReadOnlyContent`.
-  String resolve(Schema schema) {
+  String resolve(RawSchema schema) {
     String content = schema.content ?? '';
     if (schema.type == 'multiVariableText') return content;
     return replace(content);
@@ -36,7 +36,7 @@ class PlaceholderResolver {
     Map<String, dynamic> context = <String, dynamic>{
       'date': _date(now),
       'dateTime': '${_date(now)} ${_two(now.hour)}:${_two(now.minute)}',
-      for (Schema s in schemas) s.name: s.readOnly ? (s.content ?? '') : '',
+      for (RawSchema s in schemas) s.name: s.readOnly ? (s.content ?? '') : '',
       ...variables,
     };
     context.updateAll((String key, dynamic value) => _parseJson(value));

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dox_pdf_lib/dox_pdf_lib.dart';
@@ -8,39 +7,38 @@ import 'constants.dart';
 import 'dynamic_template.dart';
 import 'expression.dart';
 import 'fonts/font_store.dart';
+import 'model/schema.dart';
 import 'options.dart';
 import 'plugin.dart';
 import 'plugins.dart';
+import 'raw_props.dart';
+import 'raw_template.dart';
 import 'schema.dart';
 import 'table/table_layout.dart';
 import 'template.dart';
 
-/// Makes a PDF from a pdfme [template] and [inputs], like pdfme's
-/// `generate`.
+/// Makes a PDF from a [template] and [inputs], like pdfme's `generate`.
 ///
-/// - [template]: the pdfme template JSON (a `Map`): `basePdf` and
-///   `schemas`, or a [Template].
-/// - [inputs]: one map per copy of the template. Keys are schema names.
-/// - [options]: the pdfme options JSON (`font`, `lang`, `title`, ...), or
-///   [GenerateOptions].
+/// - [template]: build it in Dart, or read the pdfme JSON with
+///   `Template.fromJson`.
+/// - [inputs]: one map per copy of the template. Keys are schema names,
+///   values are the input strings. A table takes a JSON string of rows
+///   (`jsonEncode(rows)`), a multiVariableText a JSON string of values.
+/// - [options]: fonts, language and PDF metadata.
 /// - [plugins]: the schema types to use. With no plugins, only `text`
 ///   works, like pdfme. Pass [builtInPlugins] for all built-in types.
 ///
 /// Returns the bytes of the PDF file.
 Future<Uint8List> generate({
-  required Object template,
-  required List<Map<String, dynamic>> inputs,
-  Object? options,
-  Map<String, SchemaPlugin>? plugins,
+  required Template template,
+  required List<Map<String, String>> inputs,
+  GenerateOptions? options,
+  Map<String, SchemaPlugin<Schema>>? plugins,
 }) => Generator(
-  template: template is Template ? template : Template.fromJson(template),
+  template: rawTemplate(template),
+  basePdf: template.basePdf,
   inputs: inputs,
-  options: switch (options) {
-    GenerateOptions o => o,
-    Map<String, dynamic> m => GenerateOptions.fromJson(m),
-    null => GenerateOptions(),
-    _ => throw ArgumentError.value(options, 'options', 'must be a Map'),
-  },
+  options: options ?? GenerateOptions(),
   plugins: plugins == null || plugins.isEmpty ? defaultPlugins : plugins,
   userPlugins: plugins != null && plugins.isNotEmpty,
 ).run();
@@ -49,39 +47,44 @@ Future<Uint8List> generate({
 class Generator {
   Generator({
     required this.template,
+    required this.basePdf,
     required this.inputs,
     required this.options,
     required this.plugins,
     required this.userPlugins,
   });
 
-  final Template template;
-  final List<Map<String, dynamic>> inputs;
+  final RawTemplate template;
+
+  /// The typed base PDF of the template, for the plugins.
+  final BasePdf basePdf;
+
+  final List<Map<String, String>> inputs;
   final GenerateOptions options;
-  final Map<String, SchemaPlugin> plugins;
+  final Map<String, SchemaPlugin<Schema>> plugins;
 
   /// True when the caller passed plugins (they are checked first).
   final bool userPlugins;
 
   Future<Uint8List> run() async {
     _validate();
-    Map<String, SchemaPlugin> renderers = _renderers();
+    Map<String, SchemaPlugin<Schema>> renderers = _renderers();
     PDFDocument doc = await PDFDocument.create();
     try {
       FontStore fonts = FontStore(doc, options.font);
-      Map<Object, Object?> cache = <Object, Object?>{};
+      RenderCache cache = RenderCache();
       BasePages base = await BasePages.create(doc, template, options);
       // pdfme: tables grow and go on over pages, on a blank base PDF only
       bool grows =
           template.isBlank &&
           template.schemas.any(
-            (List<Schema> p) => p.any(isDynamicLayoutSchema),
+            (List<RawSchema> p) => p.any(isDynamicLayoutSchema),
           );
-      for (Map<String, dynamic> input in inputs) {
-        List<List<Schema>> schemas = grows
+      for (Map<String, String> input in inputs) {
+        List<List<RawSchema>> schemas = grows
             ? await dynamicTemplate(
                 template,
-                (Schema s) => tableDynamicLayout(
+                (RawSchema s) => tableDynamicLayout(
                   s,
                   _value(s, input, null),
                   fonts,
@@ -89,8 +92,8 @@ class Generator {
                 ),
               )
             : template.schemas;
-        List<Schema> allSchemas = <Schema>[
-          for (List<Schema> page in schemas) ...page,
+        List<RawSchema> allSchemas = <RawSchema>[
+          for (List<RawSchema> page in schemas) ...page,
         ];
         int pageCount = template.isBlank ? schemas.length : base.length;
         for (int j = 0; j < pageCount; j++) {
@@ -103,7 +106,7 @@ class Generator {
               'currentPage': j + 1,
             },
           );
-          RenderProps props(Schema schema, String value) => RenderProps(
+          RawProps props(RawSchema schema, String value) => RawProps(
             value: value,
             schema: schema,
             basePdf: template.basePdf,
@@ -113,24 +116,28 @@ class Generator {
             fonts: fonts,
             cache: cache,
           );
-          for (Schema s in template.staticSchema) {
-            SchemaPlugin? plugin = renderers[s.type];
+          for (RawSchema s in template.staticSchema) {
+            SchemaPlugin<Schema>? plugin = renderers[s.type];
             if (plugin == null) continue;
             String value = s.readOnly && s.type == 'table'
                 ? readOnlyTableValue(s, input)
                 : s.readOnly
                 ? resolver.resolve(s)
                 : (s.content ?? '');
-            await plugin.pdf(props(s, value));
+            await drawWithPlugin(plugin, props(s, value), basePdf);
           }
-          List<Schema> pageSchemas = j < schemas.length
+          List<RawSchema> pageSchemas = j < schemas.length
               ? schemas[j]
-              : const <Schema>[];
-          for (Schema s in pageSchemas) {
+              : const <RawSchema>[];
+          for (RawSchema s in pageSchemas) {
             if (s.name.isEmpty) continue;
-            SchemaPlugin? plugin = renderers[s.type];
+            SchemaPlugin<Schema>? plugin = renderers[s.type];
             if (plugin == null) continue;
-            await plugin.pdf(props(s, _value(s, input, resolver)));
+            await drawWithPlugin(
+              plugin,
+              props(s, _value(s, input, resolver)),
+              basePdf,
+            );
           }
         }
       }
@@ -144,32 +151,19 @@ class Generator {
   /// The value of page schema [s]: the input, or for a read-only schema
   /// its content (with placeholders filled by [resolver]).
   static String _value(
-    Schema s,
-    Map<String, dynamic> input,
+    RawSchema s,
+    Map<String, String> input,
     PlaceholderResolver? resolver,
   ) {
-    if (!s.readOnly) return inputValue(input[s.name]);
+    if (!s.readOnly) return input[s.name] ?? '';
     if (s.type == 'table') return readOnlyTableValue(s, input);
     return resolver?.resolve(s) ?? (s.content ?? '');
   }
 
   /// pdfme's `getReadOnlyTableValue`: the input of the table when it has
-  /// one (a JSON string or a list), else the `content` of the schema.
-  /// Placeholders are not filled.
-  static String readOnlyTableValue(Schema s, Map<String, dynamic> input) {
-    Object? value = input[s.name];
-    if (value == null) return s.content ?? '';
-    return value is String ? value : jsonEncode(value);
-  }
-
-  /// pdfme's `input[name] || ''`, as a string.
-  static String inputValue(Object? value) => switch (value) {
-    null || false || '' => '',
-    num n when n == 0 || n.isNaN => '',
-    String s => s,
-    Map<dynamic, dynamic> _ || List<dynamic> _ => jsonEncode(value),
-    _ => PlaceholderResolver.jsString(value),
-  };
+  /// one, else the `content` of the schema. Placeholders are not filled.
+  static String readOnlyTableValue(RawSchema s, Map<String, String> input) =>
+      input[s.name] ?? s.content ?? '';
 
   void _validate() {
     if (inputs.isEmpty) {
@@ -181,11 +175,11 @@ class Generator {
     Map<String, FontSource>? font = options.font;
     if (font != null) _checkFont(font);
     if (userPlugins) _checkPlugins();
-    for (List<Schema> page in template.schemas) {
-      for (Schema s in page) {
+    for (List<RawSchema> page in template.schemas) {
+      for (RawSchema s in page) {
         if (s.required &&
             !s.readOnly &&
-            !inputs.any((Map<String, dynamic> i) => _truthy(i[s.name]))) {
+            !inputs.any((Map<String, String> i) => _truthy(i[s.name]))) {
           throw ArgumentError(
             "[@pdfme/generator] input for '${s.name}' is required to "
             'generate this PDF',
@@ -195,7 +189,7 @@ class Generator {
     }
   }
 
-  static bool _truthy(Object? v) => inputValue(v).isNotEmpty;
+  static bool _truthy(String? v) => v != null && v.isNotEmpty;
 
   void _checkFont(Map<String, FontSource> font) {
     const String doc =
@@ -214,8 +208,8 @@ class Generator {
       );
     }
     Set<String> missing = <String>{
-      for (List<Schema> page in template.schemas)
-        for (Schema s in page)
+      for (List<RawSchema> page in template.schemas)
+        for (RawSchema s in page)
           if (s.string('fontName') case String n
               when n.isNotEmpty && !font.containsKey(n))
             n,
@@ -229,10 +223,12 @@ class Generator {
   }
 
   void _checkPlugins() {
-    Set<String> types = <String>{for (SchemaPlugin p in plugins.values) p.type};
+    Set<String> types = <String>{
+      for (SchemaPlugin<Schema> p in plugins.values) p.type,
+    };
     Set<String> missing = <String>{
-      for (List<Schema> page in template.schemas)
-        for (Schema s in page)
+      for (List<RawSchema> page in template.schemas)
+        for (RawSchema s in page)
           if (!types.contains(s.type)) s.type,
     };
     if (missing.isNotEmpty) {
@@ -244,15 +240,15 @@ class Generator {
   }
 
   /// One plugin per schema type used. Throws for a type with no plugin.
-  Map<String, SchemaPlugin> _renderers() {
-    Map<String, SchemaPlugin> out = <String, SchemaPlugin>{};
-    Iterable<Schema> all = <Schema>[
-      for (List<Schema> page in template.schemas) ...page,
+  Map<String, SchemaPlugin<Schema>> _renderers() {
+    Map<String, SchemaPlugin<Schema>> out = <String, SchemaPlugin<Schema>>{};
+    Iterable<RawSchema> all = <RawSchema>[
+      for (List<RawSchema> page in template.schemas) ...page,
       ...template.staticSchema,
     ];
-    for (Schema s in all) {
+    for (RawSchema s in all) {
       if (out.containsKey(s.type)) continue;
-      SchemaPlugin? plugin = findPlugin(plugins, s.type);
+      SchemaPlugin<Schema>? plugin = findPlugin(plugins, s.type);
       if (plugin == null) {
         throw ArgumentError(
           '[@pdfme/generator] Plugin or renderer for type ${s.type} not '

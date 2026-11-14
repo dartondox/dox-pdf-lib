@@ -27,7 +27,7 @@ Future<Ppm> _render(bool withText) async {
     _box('code', 'ean13', 30, 20),
     _box('pic', 'svg', 60, 20),
   ];
-  Uint8List bytes = await generate(
+  Uint8List bytes = await generateJson(
     template: <String, dynamic>{
       'basePdf': <String, dynamic>{
         'width': 80,

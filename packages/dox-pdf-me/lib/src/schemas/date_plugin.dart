@@ -1,4 +1,4 @@
-import '../plugin.dart';
+import '../raw_props.dart';
 import '../text/text_plugin.dart';
 import 'date_format.dart';
 
@@ -7,14 +7,14 @@ import 'date_format.dart';
 ///
 /// Props: `format` (date-fns tokens, eg. `yyyy/MM/dd`), `locale` (or the
 /// `lang` option, default `en`) and all text props.
-class DatePlugin extends SchemaPlugin {
-  const DatePlugin._(this.type);
+class DateDrawer implements RawDrawer {
+  const DateDrawer._(this.type);
 
-  const DatePlugin.date() : this._('date');
+  const DateDrawer.date() : this._('date');
 
-  const DatePlugin.time() : this._('time');
+  const DateDrawer.time() : this._('time');
 
-  const DatePlugin.dateTime() : this._('dateTime');
+  const DateDrawer.dateTime() : this._('dateTime');
 
   @override
   final String type;
@@ -61,14 +61,14 @@ class DatePlugin extends SchemaPlugin {
   static const DateFormatter _formatter = DateFormatter();
 
   @override
-  Future<void> pdf(RenderProps props) async {
+  Future<void> draw(RawProps props) async {
     if (props.value.isEmpty) return;
     String text = formatValue(
       props.value,
       props.schema.string('format'),
       _locale(props),
     );
-    await const TextPlugin().pdf(
+    await const TextDrawer().draw(
       props.copyWith(
         value: text,
         schema: props.schema.copyWith(<String, dynamic>{
@@ -100,7 +100,7 @@ class DatePlugin extends SchemaPlugin {
     }
   }
 
-  String _locale(RenderProps props) {
+  String _locale(RawProps props) {
     String? schemaLocale = props.schema.string('locale');
     if (schemaLocale != null && schemaLocale.isNotEmpty) return schemaLocale;
     String? lang = props.options.lang;

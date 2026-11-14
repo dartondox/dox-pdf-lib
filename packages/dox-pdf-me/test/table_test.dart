@@ -4,9 +4,13 @@ import 'dart:typed_data';
 
 import 'package:dox_pdf_me/dox_pdf_me.dart';
 import 'package:dox_pdf_me/src/dynamic_template.dart';
+import 'package:dox_pdf_me/src/raw_template.dart';
+import 'package:dox_pdf_me/src/schema.dart';
 import 'package:dox_pdf_me/src/table/table_image.dart';
 import 'package:dox_pdf_me/src/table/table_layout.dart';
 import 'package:test/test.dart';
+
+import 'support.dart';
 
 Map<String, dynamic> cellStyle([
   Map<String, dynamic> extra = const <String, dynamic>{},
@@ -29,8 +33,8 @@ Map<String, dynamic> cellStyle([
   ...extra,
 };
 
-Schema table([Map<String, dynamic> extra = const <String, dynamic>{}]) =>
-    Schema(<String, dynamic>{
+RawSchema table([Map<String, dynamic> extra = const <String, dynamic>{}]) =>
+    RawSchema(<String, dynamic>{
       'name': 't',
       'type': 'table',
       'position': <String, num>{'x': 10, 'y': 20},
@@ -66,7 +70,7 @@ const Map<String, dynamic> blank = <String, dynamic>{
 };
 
 Future<List<double>> heights(
-  Schema s,
+  RawSchema s,
   String body, [
   Map<String, dynamic> basePdf = blank,
 ]) async {
@@ -122,7 +126,7 @@ void main() {
     });
 
     test('font size, line height, spacing, padding and borders', () async {
-      Schema s = table(<String, dynamic>{
+      RawSchema s = table(<String, dynamic>{
         'bodyStyles': cellStyle(<String, dynamic>{
           'fontSize': 9,
           'lineHeight': 1.5,
@@ -152,7 +156,7 @@ void main() {
     test(
       'a head that would end a page alone moves with the first row',
       () async {
-        Schema s = table(<String, dynamic>{
+        RawSchema s = table(<String, dynamic>{
           'repeatHead': true,
           'position': <String, num>{'x': 10, 'y': 60},
         });
@@ -179,7 +183,7 @@ void main() {
       String png =
           'data:image/png;base64,'
           '${base64.encode(File('test/fixtures/crosscheck/image.png').readAsBytesSync())}';
-      Schema s = table(<String, dynamic>{
+      RawSchema s = table(<String, dynamic>{
         'columnStyles': <String, dynamic>{
           'cellType': <String, String>{'0': 'image', '2': 'image'},
           'imageHeightMode': <String, String>{'2': 'auto'},
@@ -279,7 +283,7 @@ void main() {
       List<List<String>> body = <List<String>>[
         for (int i = 0; i < 5; i++) <String>['$i'],
       ];
-      Schema part = table(<String, dynamic>{
+      RawSchema part = table(<String, dynamic>{
         '__splitRange': <String, dynamic>{
           'unit': 'tableBody',
           'start': 1,
@@ -297,22 +301,22 @@ void main() {
   // given units, `b` keeps its height.
   group('dynamic template', () {
     const double padding = 10;
-    Template template() => Template(
+    RawTemplate template() => RawTemplate(
       basePdf: <String, dynamic>{
         'width': 100,
         'height': 100,
         'padding': <num>[padding, padding, padding, padding],
       },
-      schemas: <List<Schema>>[
-        <Schema>[
-          Schema(<String, dynamic>{
+      schemas: <List<RawSchema>>[
+        <RawSchema>[
+          RawSchema(<String, dynamic>{
             'name': 'a',
             'type': 'table',
             'position': <String, num>{'x': 10, 'y': 10},
             'width': 10,
             'height': 10,
           }),
-          Schema(<String, dynamic>{
+          RawSchema(<String, dynamic>{
             'name': 'b',
             'type': 'table',
             'position': <String, num>{'x': 10, 'y': 30},
@@ -323,30 +327,30 @@ void main() {
       ],
     );
 
-    Future<List<List<Schema>>> run(List<double> aHeights, [double? b]) =>
+    Future<List<List<RawSchema>>> run(List<double> aHeights, [double? b]) =>
         dynamicTemplate(
           template(),
-          (Schema s) async =>
+          (RawSchema s) async =>
               DynamicLayout(s.name == 'a' ? aHeights : <double>[b ?? s.height]),
         );
 
     test('no page break', () async {
-      List<List<Schema>> p = await run(<double>[10, 10, 10, 10, 10]);
+      List<List<RawSchema>> p = await run(<double>[10, 10, 10, 10, 10]);
       expect(p.length, 1);
       expect(p[0][0].y, 10);
       expect(p[0][1].y, 50 - 10 + 30);
     });
 
     test('a on page 1, b on page 2', () async {
-      List<List<Schema>> p = await run(<double>[20, 20, 20, 20]);
+      List<List<RawSchema>> p = await run(<double>[20, 20, 20, 20]);
       expect(p.length, 2);
-      expect(p[0].map((Schema s) => s.name), <String>['a']);
-      expect(p[1].map((Schema s) => s.name), <String>['b']);
+      expect(p[0].map((RawSchema s) => s.name), <String>['a']);
+      expect(p[1].map((RawSchema s) => s.name), <String>['b']);
       expect(p[1][0].y, padding + padding);
     });
 
     test('a on pages 1 and 2, b on page 2', () async {
-      List<List<Schema>> p = await run(<double>[20, 20, 20, 20, 20]);
+      List<List<RawSchema>> p = await run(<double>[20, 20, 20, 20, 20]);
       expect(p.length, 2);
       expect(p[1][0].name, 'a');
       expect(p[1][0].y, padding);
@@ -355,7 +359,7 @@ void main() {
     });
 
     test('many page breaks', () async {
-      List<List<Schema>> p = await run(<double>[50, 50, 50, 50, 50]);
+      List<List<RawSchema>> p = await run(<double>[50, 50, 50, 50, 50]);
       expect(p.length, 5);
       for (int i = 0; i < 5; i++) {
         expect(p[i][0].name, 'a');
@@ -367,7 +371,7 @@ void main() {
     });
 
     test('a and b on the next page', () async {
-      List<List<Schema>> p = await run(<double>[80, 10, 10]);
+      List<List<RawSchema>> p = await run(<double>[80, 10, 10]);
       expect(p.length, 2);
       expect(p[0].length, 1);
       expect(p[0][0].height, 80);
@@ -377,7 +381,7 @@ void main() {
     });
 
     test('b grows too', () async {
-      List<List<Schema>> p = await run(<double>[10, 10, 10, 10, 10], 30);
+      List<List<RawSchema>> p = await run(<double>[10, 10, 10, 10, 10], 30);
       expect(p.length, 2);
       expect(p[0][0].height, 50);
       expect(p[1][0].name, 'b');
@@ -386,7 +390,7 @@ void main() {
     });
 
     test('empty heights are one unit of 0', () async {
-      List<List<Schema>> p = await run(<double>[]);
+      List<List<RawSchema>> p = await run(<double>[]);
       expect(p.length, 1);
       expect(p[0][0].height, 0);
       expect(p[0][1].name, 'b');
@@ -396,26 +400,28 @@ void main() {
       expect((await run(<double>[1000, 1000])).length, greaterThan(1));
     });
 
-    Template one(double y, {List<num> padding = const <num>[10, 10, 10, 10]}) =>
-        Template(
-          basePdf: <String, dynamic>{
-            'width': 100,
-            'height': 100,
-            'padding': padding,
-          },
-          schemas: <List<Schema>>[
-            <Schema>[
-              Schema(<String, dynamic>{
-                'name': 'a',
-                'type': 'table',
-                'position': <String, num>{'x': 10, 'y': y},
-                'width': 10,
-                'height': 10,
-              }),
-            ],
-          ],
-        );
-    Future<DynamicLayout> twoRows(Schema s) async =>
+    RawTemplate one(
+      double y, {
+      List<num> padding = const <num>[10, 10, 10, 10],
+    }) => RawTemplate(
+      basePdf: <String, dynamic>{
+        'width': 100,
+        'height': 100,
+        'padding': padding,
+      },
+      schemas: <List<RawSchema>>[
+        <RawSchema>[
+          RawSchema(<String, dynamic>{
+            'name': 'a',
+            'type': 'table',
+            'position': <String, num>{'x': 10, 'y': y},
+            'width': 10,
+            'height': 10,
+          }),
+        ],
+      ],
+    );
+    Future<DynamicLayout> twoRows(RawSchema s) async =>
         DynamicLayout(<double>[10, 10]);
 
     test('a schema far down throws instead of making millions of pages', () {
@@ -438,42 +444,42 @@ void main() {
     });
 
     test('an empty template page stays', () async {
-      Template t = Template(
+      RawTemplate t = RawTemplate(
         basePdf: template().basePdf,
-        schemas: <List<Schema>>[<Schema>[]],
+        schemas: <List<RawSchema>>[<RawSchema>[]],
       );
-      List<List<Schema>> p = await dynamicTemplate(
+      List<List<RawSchema>> p = await dynamicTemplate(
         t,
-        (Schema s) => throw StateError('not called'),
+        (RawSchema s) => throw StateError('not called'),
       );
       expect(identical(p, t.schemas), isTrue);
     });
 
     for (double actual in <double>[25, 0]) {
       test('a shrunk table pulls overlapping schemas up ($actual)', () async {
-        Template t = Template(
+        RawTemplate t = RawTemplate(
           basePdf: <String, dynamic>{
             'width': 210,
             'height': 297,
             'padding': <num>[15, 15, 15, 15],
           },
-          schemas: <List<Schema>>[
-            <Schema>[
-              Schema(<String, dynamic>{
+          schemas: <List<RawSchema>>[
+            <RawSchema>[
+              RawSchema(<String, dynamic>{
                 'name': 'table',
                 'type': 'table',
                 'position': <String, num>{'x': 15, 'y': 19.91},
                 'width': 150,
                 'height': 52.932,
               }),
-              Schema(<String, dynamic>{
+              RawSchema(<String, dynamic>{
                 'name': 'caption',
                 'type': 'text',
                 'position': <String, num>{'x': 15, 'y': 20},
                 'width': 70,
                 'height': 9,
               }),
-              Schema(<String, dynamic>{
+              RawSchema(<String, dynamic>{
                 'name': 'following',
                 'type': 'text',
                 'position': <String, num>{'x': 15, 'y': 90},
@@ -483,12 +489,12 @@ void main() {
             ],
           ],
         );
-        List<List<Schema>> p = await dynamicTemplate(
+        List<List<RawSchema>> p = await dynamicTemplate(
           t,
-          (Schema s) async => DynamicLayout(<double>[actual]),
+          (RawSchema s) async => DynamicLayout(<double>[actual]),
         );
         expect(p.length, 1);
-        expect(p[0].map((Schema s) => s.name), <String>[
+        expect(p[0].map((RawSchema s) => s.name), <String>[
           'table',
           'caption',
           'following',
@@ -516,7 +522,7 @@ void main() {
       Map<String, dynamic> t,
       Map<String, dynamic> input,
     ) async {
-      Uint8List bytes = await generate(
+      Uint8List bytes = await generateJson(
         template: t,
         inputs: <Map<String, dynamic>>[input],
         plugins: builtInPlugins,

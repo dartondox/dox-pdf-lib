@@ -5,30 +5,31 @@ import 'package:xml/xml.dart';
 
 import '../color.dart';
 import '../layout.dart';
-import '../plugin.dart';
+import '../options.dart';
+import '../raw_props.dart';
 import 'svg_parser.dart';
 import 'svg_renderer.dart';
 
 /// The `svg` schema type, like pdfme's svg plugin: draws the SVG of the
 /// value into the box. `opacity` is not used, like pdfme.
-class SvgPlugin extends SchemaPlugin {
-  const SvgPlugin();
+class SvgDrawer implements RawDrawer {
+  const SvgDrawer();
 
   @override
   String get type => 'svg';
 
   @override
-  Future<void> pdf(RenderProps props) async {
+  Future<void> draw(RawProps props) async {
     String value = props.value;
     if (!isValidSvg(value)) return;
     PDFPage page = props.page;
-    PdfLayout box = PdfLayout.of(
+    PdfLayout box = layoutOf(
       props.schema,
       page.getHeight(),
       applyRotateTranslate: false,
     );
     Map<String, PDFFont>? fonts = await _fonts(props, value);
-    SvgColorMapper? mapColor = props.options.colorType?.toLowerCase() == 'cmyk'
+    SvgColorMapper? mapColor = props.options.colorType == ColorType.cmyk
         ? rgbToCmyk
         : null;
     double rotate = box.rotate;
@@ -65,7 +66,7 @@ class SvgPlugin extends SchemaPlugin {
   /// The embedded fonts the `<text>` elements ask for. Like pdfme, only
   /// when the options have fonts; else text uses Helvetica.
   static Future<Map<String, PDFFont>?> _fonts(
-    RenderProps props,
+    RawProps props,
     String value,
   ) async {
     if (props.options.font == null || props.options.font!.isEmpty) return null;
@@ -174,8 +175,8 @@ String lucideIconSvg(String children, String? stroke) {
 
 /// The `checkbox` schema type, like pdfme: a lucide square, with a check
 /// mark when the value is exactly `'true'`. It is always drawn.
-class CheckboxPlugin extends SchemaPlugin {
-  const CheckboxPlugin();
+class CheckboxDrawer implements RawDrawer {
+  const CheckboxDrawer();
 
   static const String _square =
       '<rect width="18" height="18" x="3" y="3" rx="2"/>';
@@ -189,7 +190,7 @@ class CheckboxPlugin extends SchemaPlugin {
       lucideIconSvg(checked ? '$_square$_check' : _square, color);
 
   @override
-  Future<void> pdf(RenderProps props) => const SvgPlugin().pdf(
+  Future<void> draw(RawProps props) => const SvgDrawer().draw(
     props.copyWith(
       value: icon(props.value == 'true', props.schema.string('color')),
     ),
@@ -198,8 +199,8 @@ class CheckboxPlugin extends SchemaPlugin {
 
 /// The `radioGroup` schema type, like pdfme: a lucide circle, with a dot
 /// when the value is exactly `'true'`. It is always drawn.
-class RadioGroupPlugin extends SchemaPlugin {
-  const RadioGroupPlugin();
+class RadioGroupDrawer implements RawDrawer {
+  const RadioGroupDrawer();
 
   static const String _circle = '<circle cx="12" cy="12" r="10"/>';
   static const String _dot = '<circle cx="12" cy="12" r="1"/>';
@@ -212,7 +213,7 @@ class RadioGroupPlugin extends SchemaPlugin {
       lucideIconSvg(checked ? '$_dot$_circle' : _circle, color);
 
   @override
-  Future<void> pdf(RenderProps props) => const SvgPlugin().pdf(
+  Future<void> draw(RawProps props) => const SvgDrawer().draw(
     props.copyWith(
       value: icon(props.value == 'true', props.schema.string('color')),
     ),

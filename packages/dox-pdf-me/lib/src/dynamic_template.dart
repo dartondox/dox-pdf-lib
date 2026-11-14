@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'schema.dart';
-import 'template.dart';
+import 'raw_template.dart';
 
 /// How a schema is cut into units for the page layout, like pdfme's
 /// `DynamicLayoutResult`.
@@ -25,7 +25,7 @@ class DynamicLayout {
 /// The schema types that can grow, like pdfme's `isDynamicLayoutSchema`.
 /// pdfme also grows `list`, and `text` with `overflow: "expand"`; this
 /// package does not support those yet.
-bool isDynamicLayoutSchema(Schema schema) => schema.type == 'table';
+bool isDynamicLayoutSchema(RawSchema schema) => schema.type == 'table';
 
 const double _epsilon = 0.01;
 
@@ -36,13 +36,13 @@ const int maxDynamicPages = 100000;
 /// pdfme's `getDynamicTemplate`: lays out the schemas of a blank base PDF
 /// again for one input. A schema that grows moves the schemas below it
 /// down, and goes on to new pages when it does not fit. Each template page
-/// is laid out on its own. Returns [Template.schemas] when nothing moved.
+/// is laid out on its own. Returns [RawTemplate.schemas] when nothing moved.
 ///
 /// [layout] gives the units of a dynamic schema (see
 /// [isDynamicLayoutSchema]); other schemas are one unit of their height.
-Future<List<List<Schema>>> dynamicTemplate(
-  Template template,
-  Future<DynamicLayout> Function(Schema schema) layout,
+Future<List<List<RawSchema>>> dynamicTemplate(
+  RawTemplate template,
+  Future<DynamicLayout> Function(RawSchema schema) layout,
 ) async {
   Map<dynamic, dynamic> basePdf = template.basePdf! as Map<dynamic, dynamic>;
   List<dynamic> padding = basePdf['padding'] as List<dynamic>;
@@ -56,17 +56,17 @@ Future<List<List<Schema>>> dynamicTemplate(
       'minus the top and bottom padding is $contentHeight mm',
     );
   }
-  List<List<Schema>> result = <List<Schema>>[];
+  List<List<RawSchema>> result = <List<RawSchema>>[];
 
-  for (List<Schema> pageSchemas in template.schemas) {
+  for (List<RawSchema> pageSchemas in template.schemas) {
     if (pageSchemas.isEmpty) {
-      result.add(<Schema>[]);
+      result.add(<RawSchema>[]);
       continue;
     }
     Map<String, int> order = <String, int>{};
     List<_Item> items = <_Item>[];
     for (int i = 0; i < pageSchemas.length; i++) {
-      Schema s = pageSchemas[i];
+      RawSchema s = pageSchemas[i];
       items.add(_Item(s, math.max(0, s.y - paddingTop), i));
       order[s.name] = i;
     }
@@ -84,7 +84,7 @@ Future<List<List<Schema>>> dynamicTemplate(
           : DynamicLayout(<double>[item.schema.height]);
     }
 
-    List<List<Schema>> pages = <List<Schema>>[];
+    List<List<RawSchema>> pages = <List<RawSchema>>[];
     double offset = 0;
     for (_Item item in items) {
       double end = _place(
@@ -98,13 +98,13 @@ Future<List<List<Schema>>> dynamicTemplate(
       offset = end - (item.baseY + item.schema.height);
     }
     for (int p = 0; p < pages.length; p++) {
-      List<Schema> page = pages[p];
+      List<RawSchema> page = pages[p];
       List<int> idx = List<int>.generate(page.length, (int i) => i)
         ..sort((int a, int b) {
           int c = (order[page[a].name] ?? 0) - (order[page[b].name] ?? 0);
           return c != 0 ? c : a - b;
         });
-      pages[p] = <Schema>[for (int i in idx) page[i]];
+      pages[p] = <RawSchema>[for (int i in idx) page[i]];
     }
     while (pages.length > 1 && pages.last.isEmpty) {
       pages.removeLast();
@@ -119,7 +119,7 @@ Future<List<List<Schema>>> dynamicTemplate(
 class _Item {
   _Item(this.schema, this.baseY, this.index);
 
-  final Schema schema;
+  final RawSchema schema;
   final double baseY;
   final int index;
   late DynamicLayout layout;
@@ -128,12 +128,12 @@ class _Item {
 /// pdfme's `placeUnitsOnPages`. Returns the y (over all pages, without the
 /// padding) where the schema ends.
 double _place(
-  Schema schema,
+  RawSchema schema,
   DynamicLayout layout,
   double startY,
   double contentHeight,
   double paddingTop,
-  List<List<Schema>> pages,
+  List<List<RawSchema>> pages,
 ) {
   if (!startY.isFinite) {
     throw ArgumentError(
@@ -161,7 +161,7 @@ double _place(
       );
     }
     while (pages.length <= page) {
-      pages.add(<Schema>[]);
+      pages.add(<RawSchema>[]);
     }
     double spaceLeft = contentHeight - y;
     if (heights[unit] > spaceLeft + _epsilon) {
@@ -222,13 +222,13 @@ double _place(
   return end;
 }
 
-bool _unchanged(List<List<Schema>> before, List<List<Schema>> after) {
+bool _unchanged(List<List<RawSchema>> before, List<List<RawSchema>> after) {
   if (before.length != after.length) return false;
   for (int i = 0; i < before.length; i++) {
     if (before[i].length != after[i].length) return false;
     for (int j = 0; j < before[i].length; j++) {
-      Schema a = before[i][j];
-      Schema b = after[i][j];
+      RawSchema a = before[i][j];
+      RawSchema b = after[i][j];
       if ((a.height - b.height).abs() > _epsilon ||
           (a.y - b.y).abs() > _epsilon) {
         return false;

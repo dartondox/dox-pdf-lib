@@ -14,11 +14,7 @@ class FontSource {
 
   /// Reads `{data, fallback, subset}`. `data` is bytes, a base64 string or
   /// a `data:` URI.
-  factory FontSource.fromJson(String name, Object? json) {
-    if (json is FontSource) return json;
-    if (json is! Map) {
-      throw ArgumentError.value(json, 'font.$name', 'must be a map');
-    }
+  factory FontSource.fromJson(String name, Map<String, Object?> json) {
     return FontSource(
       _bytes(name, json['data']),
       fallback: json['fallback'] == true,

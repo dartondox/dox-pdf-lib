@@ -3,6 +3,7 @@ import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 import '../color.dart';
 import '../constants.dart';
 import '../layout.dart';
+import '../options.dart';
 import '../schema.dart';
 
 /// Sizes of the 4 sides of a box, in millimetres. A missing side is 0.
@@ -37,7 +38,7 @@ class BoxArea {
     required this.bottomInset,
   });
 
-  factory BoxArea.of(Schema schema) {
+  factory BoxArea.of(RawSchema schema) {
     BoxSides border = BoxSides.fromJson(schema['borderWidth']);
     BoxSides padding = BoxSides.fromJson(schema['padding']);
     double left = border.left + padding.left;
@@ -64,10 +65,10 @@ class BoxArea {
 class TextBoxDecoration {
   TextBoxDecoration(this.schema, this.box, this.pivot, this.colorType);
 
-  final Schema schema;
+  final RawSchema schema;
   final PdfLayout box;
   final Point pivot;
-  final String? colorType;
+  final ColorType? colorType;
 
   void draw(PDFPage page) {
     String? background = schema.string('backgroundColor');

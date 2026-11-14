@@ -1,11 +1,14 @@
 import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 
 import 'fonts/font_store.dart';
+import 'model/schema.dart';
 import 'options.dart';
+import 'raw_props.dart';
 import 'schema.dart';
+import 'template.dart';
 
 /// What a plugin gets to draw one schema, like pdfme's `PDFRenderProps`.
-class RenderProps {
+class RenderProps<S extends Schema> {
   RenderProps({
     required this.value,
     required this.schema,
@@ -17,13 +20,14 @@ class RenderProps {
     required this.cache,
   });
 
-  /// The input value of the schema (`''` when there is none).
+  /// The input value of the schema (`''` when there is none). For a
+  /// read-only schema, its content.
   final String value;
 
-  final Schema schema;
+  final S schema;
 
-  /// The `basePdf` of the template: a blank page map, or PDF data.
-  final Object? basePdf;
+  /// The base PDF of the template.
+  final BasePdf basePdf;
 
   final PDFDocument doc;
 
@@ -35,31 +39,106 @@ class RenderProps {
   final FontStore fonts;
 
   /// One cache for the whole document (fonts, images, ...).
-  final Map<Object, Object?> cache;
+  final RenderCache cache;
 
   /// A copy with another [value] or [schema].
-  RenderProps copyWith({String? value, Schema? schema}) => RenderProps(
-    value: value ?? this.value,
-    schema: schema ?? this.schema,
-    basePdf: basePdf,
-    doc: doc,
-    page: page,
-    options: options,
-    fonts: fonts,
-    cache: cache,
-  );
+  RenderProps<S> copyWith({String? value, S? schema}) =>
+      withSchema<S>(schema ?? this.schema, value: value);
+
+  /// A copy for another schema, eg. to draw a [TextSchema] with
+  /// `TextPlugin` from your own plugin.
+  RenderProps<T> withSchema<T extends Schema>(T schema, {String? value}) =>
+      RenderProps<T>(
+        value: value ?? this.value,
+        schema: schema,
+        basePdf: basePdf,
+        doc: doc,
+        page: page,
+        options: options,
+        fonts: fonts,
+        cache: cache,
+      );
 }
 
-/// A schema type, like a pdfme plugin. It draws one schema on a page.
+/// Values a plugin keeps for the whole document, eg. an embedded image or
+/// font, so it is embedded once.
+class RenderCache {
+  final Map<String, Object?> _values = <String, Object?>{};
+
+  /// The value of [key], or null when there is none of type [T].
+  T? get<T>(String key) {
+    Object? v = _values[key];
+    return v is T ? v : null;
+  }
+
+  void set<T>(String key, T value) => _values[key] = value;
+}
+
+/// A schema type, like a pdfme plugin. It reads one schema type from JSON
+/// and draws it on a page.
 ///
-/// Make your own type: extend this class, and pass it in the `plugins` of
-/// `generate`.
-abstract class SchemaPlugin {
+/// For your own type, make a schema class (see [Schema]) and a plugin for
+/// it. Pass the plugin in the `plugins` of `generate`:
+///
+/// ```dart
+/// class StampPlugin extends SchemaPlugin<StampSchema> {
+///   const StampPlugin();
+///
+///   @override
+///   String get type => 'stamp';
+///
+///   @override
+///   StampSchema fromJson(Map<String, Object?> json) =>
+///       StampSchema.fromJson(json);
+///
+///   @override
+///   Future<void> pdf(RenderProps<StampSchema> props) async {
+///     // draw props.schema on props.page
+///   }
+/// }
+/// ```
+abstract class SchemaPlugin<S extends Schema> {
   const SchemaPlugin();
 
   /// The schema `type` this plugin draws, eg. `text`.
   String get type;
 
+  /// Reads the pdfme JSON of a schema of [type].
+  S fromJson(Map<String, Object?> json);
+
   /// Draws the schema of [props] on its page.
-  Future<void> pdf(RenderProps props);
+  Future<void> pdf(RenderProps<S> props);
+
+  Future<void> _drawRaw(RawProps raw, BasePdf basePdf) => pdf(
+    RenderProps<S>(
+      value: raw.value,
+      schema: fromJson(raw.schema.json),
+      basePdf: basePdf,
+      doc: raw.doc,
+      page: raw.page,
+      options: raw.options,
+      fonts: raw.fonts,
+      cache: raw.cache,
+    ),
+  );
 }
+
+/// Draws the JSON schema of [raw] with [plugin]: the plugin reads it into
+/// its own schema class first.
+Future<void> drawWithPlugin(
+  SchemaPlugin<Schema> plugin,
+  RawProps raw,
+  BasePdf basePdf,
+) => plugin._drawRaw(raw, basePdf);
+
+/// [props] as the JSON form the built-in drawers read.
+RawProps rawProps(RenderProps<Schema> props) => RawProps(
+  value: props.value,
+  schema: RawSchema(props.schema.toJson()),
+  basePdf: rawBasePdf(props.basePdf),
+  doc: props.doc,
+  page: props.page,
+  options: props.options,
+  fonts: props.fonts,
+  cache: props.cache,
+);

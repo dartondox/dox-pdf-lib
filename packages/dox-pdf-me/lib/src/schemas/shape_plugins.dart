@@ -5,25 +5,25 @@ import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 import '../color.dart';
 import '../constants.dart';
 import '../layout.dart';
-import '../plugin.dart';
+import '../raw_props.dart';
 import '../schema.dart';
 
 /// The `line` schema type: a horizontal line through the middle of the box.
 /// The box height is the line thickness. Prop: `color`.
-class LinePlugin extends SchemaPlugin {
-  const LinePlugin();
+class LineDrawer implements RawDrawer {
+  const LineDrawer();
 
   @override
   String get type => 'line';
 
   @override
-  Future<void> pdf(RenderProps props) async {
-    Schema schema = props.schema;
+  Future<void> draw(RawProps props) async {
+    RawSchema schema = props.schema;
     String? hex = schema.string('color');
     if (schema.width == 0 || schema.height == 0 || hex == null || hex.isEmpty) {
       return;
     }
-    PdfLayout box = PdfLayout.of(
+    PdfLayout box = layoutOf(
       schema,
       props.page.getHeight(),
       applyRotateTranslate: false,
@@ -44,14 +44,14 @@ class LinePlugin extends SchemaPlugin {
 /// The `rectangle` and `ellipse` schema types. Props: `color` (fill),
 /// `borderColor`, `borderWidth` (mm) and, for a rectangle, `radius` (mm).
 /// The border is drawn inside the box.
-class ShapePlugin extends SchemaPlugin {
-  const ShapePlugin._(this.type);
+class ShapeDrawer implements RawDrawer {
+  const ShapeDrawer._(this.type);
 
   /// The `rectangle` type.
-  const ShapePlugin.rectangle() : this._('rectangle');
+  const ShapeDrawer.rectangle() : this._('rectangle');
 
   /// The `ellipse` type.
-  const ShapePlugin.ellipse() : this._('ellipse');
+  const ShapeDrawer.ellipse() : this._('ellipse');
 
   @override
   final String type;
@@ -60,18 +60,14 @@ class ShapePlugin extends SchemaPlugin {
   static final double kappa = 4.0 * ((math.sqrt(2) - 1.0) / 3.0);
 
   @override
-  Future<void> pdf(RenderProps props) async {
-    Schema schema = props.schema;
+  Future<void> draw(RawProps props) async {
+    RawSchema schema = props.schema;
     String fillHex = schema.string('color') ?? '';
     String borderHex = schema.string('borderColor') ?? '';
     if (fillHex.isEmpty && borderHex.isEmpty) return;
     double pageHeight = props.page.getHeight();
-    PdfLayout box = PdfLayout.of(schema, pageHeight);
-    PdfLayout plain = PdfLayout.of(
-      schema,
-      pageHeight,
-      applyRotateTranslate: false,
-    );
+    PdfLayout box = layoutOf(schema, pageHeight);
+    PdfLayout plain = layoutOf(schema, pageHeight, applyRotateTranslate: false);
     double? bw = schema.number('borderWidth');
     double borderWidth = bw == null || bw == 0 ? 0 : mm2pt(bw);
     HexAlpha fill = splitHexAlpha(fillHex);
