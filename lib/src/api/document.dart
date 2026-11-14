@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:typed_data';
@@ -27,6 +28,8 @@ class PDFDocument implements Finalizable {
 
   Pointer<Void> _handle;
 
+  /// The pages, in order. Kept up to date by insert and remove, so adding
+  /// many pages does not read the page tree again each time.
   List<PDFPage>? _pages;
   final Map<int, PDFPage> _pageMap = <int, PDFPage>{};
 
@@ -139,7 +142,9 @@ class PDFDocument implements Finalizable {
       _pageMap.putIfAbsent(ref, () => PDFPage._(this, ref));
 
   /// All pages, in order.
-  List<PDFPage> getPages() {
+  List<PDFPage> getPages() => UnmodifiableListView<PDFPage>(_pageList());
+
+  List<PDFPage> _pageList() {
     List<PDFPage>? pages = _pages;
     if (pages != null) return pages;
     Int64List count = Int64List(1);
@@ -149,18 +154,18 @@ class PDFDocument implements Finalizable {
       refs = Int64List(count[0]);
       check(doxPdfGetPages(_handle, refs.address, refs.length, count.address));
     }
-    return _pages = List<PDFPage>.unmodifiable(<PDFPage>[
+    return _pages = <PDFPage>[
       for (int i = 0; i < count[0]; i++) _page(refs[i]),
-    ]);
+    ];
   }
 
   PDFPage getPage(int index) {
-    List<PDFPage> pages = getPages();
+    List<PDFPage> pages = _pageList();
     RangeError.checkValueInInterval(index, 0, pages.length - 1, 'index');
     return pages[index];
   }
 
-  int getPageCount() => getPages().length;
+  int getPageCount() => _pageList().length;
 
   List<int> getPageIndices() =>
       List<int>.generate(getPageCount(), (int i) => i);
@@ -187,16 +192,30 @@ class PDFDocument implements Finalizable {
         'must be a PDFPage or [width, height]',
       );
     }
+    List<PDFPage> pages = _pageList();
+    _checkIndex(index, pages.length);
+    // -1 tells Rust to append to the root /Kids, with no walk over the tree
+    int at = index == pages.length ? -1 : index;
     Int64List out = Int64List(1);
-    check(doxPdfInsertPage(_handle, index, ref, size[0], size[1], out.address));
-    _pages = null;
-    return _page(out[0]);
+    check(doxPdfInsertPage(_handle, at, ref, size[0], size[1], out.address));
+    PDFPage added = _page(out[0]);
+    pages.insert(index, added);
+    return added;
   }
 
   /// Takes the page at [index] out of the document.
   void removePage(int index) {
     check(doxPdfRemovePage(_handle, index));
-    _pages = null;
+    _pages?.removeAt(index);
+  }
+
+  static void _checkIndex(int index, int max) {
+    if (index < 0 || index > max) {
+      throw RangeError(
+        '`index` must be at least 0 and at most $max, but was actually '
+        '$index',
+      );
+    }
   }
 
   /// Copies the pages at [indices] of [srcDoc] into this document, with

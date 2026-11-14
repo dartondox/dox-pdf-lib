@@ -131,6 +131,32 @@ void main() {
     );
   });
 
+  test('adding many pages stays fast and in order', () async {
+    PDFDocument doc = await PDFDocument.create();
+    Stopwatch watch = Stopwatch()..start();
+    for (int i = 0; i < 5000; i++) {
+      doc.addPage(<double>[100.0 + i, 100]);
+    }
+    // loose bound: the old code took about 10 s for 4000 pages
+    expect(watch.elapsedMilliseconds, lessThan(1000));
+    doc.insertPage(2500, <double>[1, 1]);
+    doc.insertPage(0, <double>[2, 2]);
+    doc.removePage(1);
+    List<double> widths(PDFDocument d) => <double>[
+      for (PDFPage p in d.getPages()) p.getWidth(),
+    ];
+    List<double> want = <double>[
+      2,
+      for (int i = 1; i < 2500; i++) 100.0 + i,
+      1,
+      for (int i = 2500; i < 5000; i++) 100.0 + i,
+    ];
+    expect(widths(doc), want);
+    // the Dart page list matches the file
+    PDFDocument again = await PDFDocument.load(await doc.save());
+    expect(widths(again), want);
+  });
+
   test('broken input never crashes', () async {
     for (List<int> input in <List<int>>[
       <int>[],

@@ -166,8 +166,18 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # no change at all: stash would save nothing and pop would fail
+          if git diff --quiet; then
+            echo "The hashes did not change."
+            exit 0
+          fi
           git stash
           git checkout main
           git stash pop
+          # a rerun of the same tag: main has these hashes already
+          if git diff --quiet; then
+            echo "The hashes on main are up to date."
+            exit 0
+          fi
           git commit -am "Hashes of the $GITHUB_REF_NAME libraries"
           git push origin main

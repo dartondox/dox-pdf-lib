@@ -166,11 +166,12 @@ pub fn page_entries(doc: &Document) -> Result<Vec<PageEntry>> {
 }
 
 fn add_count(doc: &mut Document, node: ObjectId, delta: i64) {
+    // `/Count` may be a real or a reference; the new value is a direct integer
+    let count = match doc.objects.get(&node) {
+        Some(Object::Dictionary(d)) => dict_get(doc, d, b"Count").and_then(as_f64).unwrap_or(0.0) as i64,
+        _ => return,
+    };
     if let Some(Object::Dictionary(d)) = doc.objects.get_mut(&node) {
-        let count = match d.get(b"Count") {
-            Ok(Object::Integer(c)) => *c,
-            _ => 0,
-        };
         d.set("Count", Object::Integer((count + delta).max(0)));
     }
 }
@@ -222,6 +223,18 @@ pub fn insert_page(doc: &mut Document, index: usize, page: ObjectId) -> Result<(
         add_count(doc, *node, 1);
     }
     page_dict_mut(doc, page)?.set("Parent", Object::Reference(parent));
+    Ok(())
+}
+
+/// Puts the page `page` at the end of the root `/Kids`, like pdf-lib's
+/// `insertLeafNode` with the index of the page count. No walk over the
+/// tree, so adding many pages stays linear.
+pub fn append_page(doc: &mut Document, page: ObjectId) -> Result<()> {
+    let root = root_pages(doc)?;
+    page_dict(doc, page)?;
+    kids_mut(doc, root)?.push(Object::Reference(page));
+    add_count(doc, root, 1);
+    page_dict_mut(doc, page)?.set("Parent", Object::Reference(root));
     Ok(())
 }
 
@@ -587,7 +600,8 @@ pub extern "C" fn dox_pdf_get_pages(handle: *const c_void, out: *mut i64, cap: i
 }
 
 /// Inserts `page` (a ref), or a new page of `width` x `height` when `page`
-/// is 0, at `index`. `out[0]` = the page ref.
+/// is 0, at `index`. A negative `index` appends (fast, no tree walk).
+/// `out[0]` = the page ref.
 #[unsafe(no_mangle)]
 pub extern "C" fn dox_pdf_insert_page(
     handle: *const c_void,
@@ -599,10 +613,6 @@ pub extern "C" fn dox_pdf_insert_page(
 ) -> i32 {
     call(|| {
         with_doc(handle, |d| {
-            let count = page_entries(&d.pdf)?.len();
-            if index < 0 || index as usize > count {
-                return Err(range_error(index.max(0) as usize, count));
-            }
             if page == 0 && !(width.is_finite() && height.is_finite()) {
                 return Err(Error::generic("a page size is not a finite number"));
             }
@@ -611,7 +621,12 @@ pub extern "C" fn dox_pdf_insert_page(
             } else {
                 ref_from_i64(page)
             };
-            insert_page(&mut d.pdf, index as usize, id)?;
+            // insert_page checks the index; the Dart side checks it first, so
+            // a new page is not left over on a bad index
+            match usize::try_from(index) {
+                Ok(index) => insert_page(&mut d.pdf, index, id)?,
+                Err(_) => append_page(&mut d.pdf, id)?,
+            }
             write_out(out, ref_to_i64(id));
             Ok(OK)
         })
@@ -749,6 +764,26 @@ mod tests {
         ] {
             assert!(load(input, 0, b"").is_err());
         }
+    }
+
+    #[test]
+    fn append_and_count() {
+        let mut d = create(false, b"");
+        let a = new_page(&mut d.pdf, 1.0, 1.0);
+        let b = new_page(&mut d.pdf, 2.0, 2.0);
+        append_page(&mut d.pdf, a).unwrap();
+        insert_page(&mut d.pdf, 0, b).unwrap();
+        let ids: Vec<_> = page_entries(&d.pdf).unwrap().iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![b, a]);
+        // a real /Count is read, and written back as an integer
+        let root = root_pages(&d.pdf).unwrap();
+        page_dict_mut(&mut d.pdf, root).unwrap().set("Count", Object::Real(2.0));
+        let c = new_page(&mut d.pdf, 3.0, 3.0);
+        append_page(&mut d.pdf, c).unwrap();
+        assert_eq!(
+            page_dict(&d.pdf, root).unwrap().get(b"Count").unwrap(),
+            &Object::Integer(3)
+        );
     }
 
     #[test]
