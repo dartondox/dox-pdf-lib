@@ -45,3 +45,17 @@ class InvalidPDFDateStringError extends PDFLibError {
   InvalidPDFDateStringError(String value)
     : super('Invalid PDF date string: $value');
 }
+
+class MissingPageContentsEmbeddingError extends PDFLibError {
+  MissingPageContentsEmbeddingError()
+    : super("Can't embed page with missing Contents");
+}
+
+class PageEmbeddingMismatchedContextError extends PDFLibError {
+  PageEmbeddingMismatchedContextError()
+    : super(
+        'Found mismatched contexts while embedding pages. All pages in the '
+        'array passed to `PDFDocument.embedPages()` must be from the same '
+        'document.',
+      );
+}

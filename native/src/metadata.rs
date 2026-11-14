@@ -208,7 +208,7 @@ pub extern "C" fn dox_pdf_meta_set(
     call(|| {
         let key = slice(key, key_len)?;
         let value = utf8(slice(value, value_len)?)?;
-        with_doc(handle, |d| set(&mut d.pdf, key, value, mode).map(|_| OK))
+        with_doc_mut(handle, |d| set(&mut d.pdf, key, value, mode).map(|_| OK))
     })
 }
 

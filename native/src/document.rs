@@ -467,6 +467,8 @@ pub const SAVE_ADD_DEFAULT_PAGE: i32 = 2;
 /// The part of save that changes the document (pdf-lib's addDefaultPage).
 /// Runs under the lock. Returns a copy to write.
 pub fn prepare_save(doc: &mut Doc, flags: i32) -> Result<Document> {
+    // pdf-lib embeds pages of the same document at save
+    crate::embed::flush(doc)?;
     if flags & SAVE_ADD_DEFAULT_PAGE != 0 && page_entries(&doc.pdf)?.is_empty() {
         let page = new_page(&mut doc.pdf, A4.0, A4.1);
         insert_page(&mut doc.pdf, 0, page)?;
@@ -573,7 +575,7 @@ pub extern "C" fn dox_pdf_load(
 #[unsafe(no_mangle)]
 pub extern "C" fn dox_pdf_save(handle: *const c_void, flags: i32, out: *mut i64, done: DoneCallback, id: i64) -> i32 {
     call(|| {
-        let pdf = with_doc(handle, |d| prepare_save(d, flags))?;
+        let pdf = with_doc_mut(handle, |d| prepare_save(d, flags))?;
         if estimate_size(&pdf) < ASYNC_THRESHOLD {
             write_out(out, bytes_into_raw(write(pdf, flags)?));
             return Ok(OK);
@@ -619,7 +621,7 @@ pub extern "C" fn dox_pdf_insert_page(
     out: *mut i64,
 ) -> i32 {
     call(|| {
-        with_doc(handle, |d| {
+        with_doc_mut(handle, |d| {
             if page == 0 && !(width.is_finite() && height.is_finite()) {
                 return Err(Error::generic("a page size is not a finite number"));
             }
@@ -643,7 +645,7 @@ pub extern "C" fn dox_pdf_insert_page(
 #[unsafe(no_mangle)]
 pub extern "C" fn dox_pdf_remove_page(handle: *const c_void, index: i64) -> i32 {
     call(|| {
-        with_doc(handle, |d| {
+        with_doc_mut(handle, |d| {
             let index = usize::try_from(index).unwrap_or(usize::MAX);
             remove_page(&mut d.pdf, index)?;
             Ok(OK)
@@ -674,6 +676,8 @@ pub extern "C" fn dox_pdf_copy_pages(
         // read the source first and unlock it, then write the target: the
         // two locks are never held at once (no deadlock, and src may be dst)
         let (objects, pages) = with_doc(src, |s| {
+            // pending embeds of src must exist before they are copied
+            crate::embed::flush_source(s)?;
             let entries = page_entries(&s.pdf)?;
             let mut ids = Vec::with_capacity(indices.len());
             for &i in indices {
@@ -683,7 +687,7 @@ pub extern "C" fn dox_pdf_copy_pages(
             }
             copy_pages(&s.pdf, &ids)
         })?;
-        with_doc(dst, |d| {
+        with_doc_mut(dst, |d| {
             let base = d.pdf.max_id;
             for (id, mut obj) in objects {
                 shift(&mut obj, base);

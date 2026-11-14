@@ -29,6 +29,8 @@ pub const ERR_EMPTY_REMOVE: i32 = 5;
 pub const ERR_NOT_FOUND: i32 = 6;
 pub const ERR_PARSE: i32 = 7;
 pub const ERR_DISPOSED: i32 = 8;
+/// Embed: the page has no `/Contents` (pdf-lib's MissingPageContentsEmbeddingError).
+pub const ERR_MISSING_CONTENTS: i32 = 20;
 
 /// Input or output at least this big runs on a Rust thread, so a large
 /// load or save does not block the Dart event loop. Smaller work runs
@@ -76,6 +78,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Doc {
     pub pdf: Document,
     pub draw: crate::draw::DrawState,
+    pub embed: crate::embed::EmbedState,
+    /// Goes up on every call that changes the document (`with_doc_mut`).
+    /// The embed cache of another document checks it.
+    pub generation: u64,
 }
 
 pub type Shared = Mutex<Doc>;
@@ -173,6 +179,20 @@ pub fn handle_into_raw(doc: Doc) -> i64 {
     Arc::into_raw(Arc::new(Mutex::new(doc))) as i64
 }
 
+/// A new owned `Arc` from a handle, for work on another thread or to hold
+/// two documents at once.
+pub fn handle_arc(handle: *const c_void) -> Result<Arc<Shared>> {
+    if handle.is_null() {
+        return Err(Error::new(ERR_DISPOSED, "the document was disposed"));
+    }
+    let ptr = handle as *const Shared;
+    // SAFETY: Dart keeps the handle alive while it calls us.
+    unsafe {
+        Arc::increment_strong_count(ptr);
+        Ok(Arc::from_raw(ptr))
+    }
+}
+
 pub fn handle_ref<'a>(handle: *const c_void) -> Result<&'a Shared> {
     if handle.is_null() {
         return Err(Error::new(ERR_DISPOSED, "the document was disposed"));
@@ -192,6 +212,15 @@ pub fn with_doc<T>(handle: *const c_void, f: impl FnOnce(&mut Doc) -> Result<T>)
     let shared = handle_ref(handle)?;
     let mut doc = lock(shared)?;
     f(&mut doc)
+}
+
+/// `with_doc` for a call that changes the document: it also moves
+/// `generation` up.
+pub fn with_doc_mut<T>(handle: *const c_void, f: impl FnOnce(&mut Doc) -> Result<T>) -> Result<T> {
+    with_doc(handle, |d| {
+        d.generation = d.generation.wrapping_add(1);
+        f(d)
+    })
 }
 
 /// Called once the work of a `PENDING` call ends: `(id, status, value)`.

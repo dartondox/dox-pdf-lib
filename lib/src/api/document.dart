@@ -3,8 +3,10 @@ import 'dart:ffi';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import '../ffi/attachment_bindings.dart';
 import '../ffi/document_bindings.dart';
 import '../ffi/draw_bindings.dart';
+import '../ffi/embed_bindings.dart';
 import '../ffi/ffi_util.dart';
 import '../ffi/font_bindings.dart';
 import '../ffi/image_bindings.dart';
@@ -17,7 +19,9 @@ import 'rotations.dart';
 import 'sizes.dart';
 
 // One part per feature area, so a new area is one new line here.
+part 'attachment.dart';
 part 'draw.dart';
+part 'embed.dart';
 part 'font.dart';
 part 'image.dart';
 part 'metadata.dart';

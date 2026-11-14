@@ -232,13 +232,11 @@ fn graphics_state(
 
 /// For other areas (eg. `drawPage` in embed.rs): appends `ops` to the one
 /// current content stream of the page, after all earlier draw calls.
-#[allow(dead_code)]
 pub fn append_content(doc: &mut Doc, page: ObjectId, ops: &[u8]) -> Result<()> {
     append(&mut doc.pdf, &mut doc.draw, page, ops)
 }
 
 /// For other areas: the page's name for XObject `id`, added once per page.
-#[allow(dead_code)]
 pub fn xobject_name(doc: &mut Doc, page: ObjectId, id: ObjectId, tag: &str) -> Result<Vec<u8>> {
     resource(
         &mut doc.pdf,
@@ -253,7 +251,6 @@ pub fn xobject_name(doc: &mut Doc, page: ObjectId, id: ObjectId, tag: &str) -> R
 
 /// For other areas: the page's name for an ExtGState with these values
 /// (NaN / -1 mean "not set"), or `None` when none is needed.
-#[allow(dead_code)]
 pub fn graphics_state_name(
     doc: &mut Doc,
     page: ObjectId,
@@ -1185,7 +1182,7 @@ pub extern "C" fn dox_pdf_draw(
             unsafe { std::slice::from_raw_parts(nums, nums_len as usize) }
         };
         let bytes = slice(bytes, bytes_len)?;
-        with_doc(handle, |d| draw(d, ref_from_i64(page), kind, nums, bytes).map(|_| OK))
+        with_doc_mut(handle, |d| draw(d, ref_from_i64(page), kind, nums, bytes).map(|_| OK))
     })
 }
 
@@ -1193,7 +1190,7 @@ pub extern "C" fn dox_pdf_draw(
 /// `scaleAnnotations`.
 #[unsafe(no_mangle)]
 pub extern "C" fn dox_pdf_page_change(handle: *const c_void, page: i64, kind: i32, x: f64, y: f64) -> i32 {
-    call(|| with_doc(handle, |d| change_page(d, ref_from_i64(page), kind, x, y).map(|_| OK)))
+    call(|| with_doc_mut(handle, |d| change_page(d, ref_from_i64(page), kind, x, y).map(|_| OK)))
 }
 
 #[cfg(test)]

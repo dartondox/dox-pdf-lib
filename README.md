@@ -45,6 +45,9 @@ The names and defaults follow pdf-lib. Some small differences, because this is D
 - Sizes and boxes are stored with about 7 significant digits (eg. `595.28` stays `595.28`, `12345.678` becomes `12345.68`). pdf-lib keeps more digits. The PDF library under the hood stores real numbers as 32-bit floats.
 - A page with no MediaBox at all reads as US Letter (612 x 792). pdf-lib throws an error.
 - NaN and infinity in sizes and boxes throw an `ArgumentError`.
+- `attach` inserts the file name sorted in the `/EmbeddedFiles` name tree, as the PDF spec asks. pdf-lib appends it at the end.
+- `getAttachments()` exists too. pdf-lib can not read attachments.
+- A page of another document is embedded at once by `embedPdf`, `embedPage` and `embedPages`; pdf-lib does it at save. The same source page (with the same box and matrix) embedded twice gives the same embedded page. A page of the same document is embedded at save, like pdf-lib.
 - `load(..., ignoreEncryption: true)`:
   - A file with only an owner password (it opens with no password) is decrypted. You can read its text and info. `isEncrypted` stays true. `save()` writes an unencrypted file.
   - A file with a user password throws `PDFParsingError`. Its objects can not be read without the password. pdf-lib still lists the pages.
