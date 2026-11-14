@@ -155,6 +155,9 @@ dox_pdf_lib API, so one import is enough.
 | `date`, `time`, `dateTime` | `DatePlugin.date()`, `.time()`, `.dateTime()` |
 | `checkbox`, `radioGroup` | `CheckboxPlugin`, `RadioGroupPlugin` |
 | `select` | `SelectPlugin` |
+| `multiVariableText` | `MultiVariableTextPlugin` |
+| `signature` | `SignaturePlugin` (drawn like `image`) |
+| `circleMark` | `CircleMarkPlugin` |
 
 The text props work like in pdfme: `fontName`, `fontSize`, `alignment`
 (`left`, `center`, `right`, `justify`), `verticalAlignment` (`top`,
@@ -166,7 +169,41 @@ Khmer and Myanmar text breaks between words, like in pdfme: the words come
 from the same ICU word lists as in Node.js 24 (`dictionaryWordBreaks` of
 dox_pdf_lib).
 
-`table` and `multiVariableText` are not supported yet.
+`table` is not supported yet.
+
+### multiVariableText
+
+The schema has a `text` with `{name}` variables and a `variables` list of
+the names. The input is a JSON string with the value of each variable:
+
+```dart
+Map<String, dynamic> schema = <String, dynamic>{
+  'name': 'greeting',
+  'type': 'multiVariableText',
+  'position': <String, num>{'x': 20, 'y': 20},
+  'width': 170,
+  'height': 10,
+  'text': 'Hello {name}, welcome to {city}!',
+  'variables': <String>['name', 'city'],
+};
+Map<String, dynamic> input = <String, dynamic>{
+  'greeting': '{"name": "Ann", "city": "Paris"}',
+};
+```
+
+- The result is drawn like a `text` schema. All text props work, also
+  `dynamicFontSize`.
+- `{...}` parts without a value are removed.
+- When a variable of `variables` is missing in the input (or `null`),
+  nothing is drawn. With `required: true`, `generate` throws.
+- `readOnly: true`: the values come from the schema `content` (a JSON
+  string). With `contentSnapshot: true`, `content` is the text to draw.
+
+### circleMark
+
+A circle line around the box when the input is `'true'`. `color` is the
+line color (a hex value) and `borderWidth` is the line width (mm). Nothing
+is drawn for other inputs, a bad color or a width of 0.
 
 ## Fonts
 
@@ -230,8 +267,12 @@ This list compares with pdfme 6.2.8.
   `{dateTime}`. pdfme also runs JavaScript expressions, like `{price * 2}`.
   Those stay as they are.
 - **Not supported yet:** `overflow: "expand"` (the text box does not grow),
-  inline markdown text, tables, `multiVariableText`, font URLs, base PDFs
+  inline markdown text, tables, font URLs, base PDFs
   with a user password (`basePdfPassword`), and link annotations of the base PDF.
+- **multiVariableText input as a map:** pdfme needs a JSON string and
+  throws for an object when the schema has variables. This package also
+  takes a `Map` and turns it into JSON. With `textFormat: "inline-markdown"`, the text is drawn as plain
+  text (inline markdown is not supported yet).
 - **EXIF orientation** of JPEG and PNG images works like in pdfme. pdfme
   turns the pixels and encodes a JPEG again; this package keeps the file and
   turns it when it draws it. The page looks the same.

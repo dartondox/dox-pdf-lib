@@ -1,5 +1,9 @@
 ## Unreleased
 
+- New schema types, like in pdfme: `multiVariableText` (a text with
+  `{name}` variables, the input is a JSON object of values), `signature`
+  (drawn like an image) and `circleMark` (a circle line when the input is
+  `'true'`). They are in `builtInPlugins`.
 - PDF417 has the same modules as in pdfme. The `barcode` package picked
   other columns, rows and codewords, so the code was wider and lower than
   in pdfme and did not fill a box made for it. Now a port of the bwip-js
