@@ -1,5 +1,18 @@
 ## Unreleased
 
+- New `table` schema type (`TablePlugin`, in `builtInPlugins` as `Table`).
+  The value is a JSON string of rows. It has the props and defaults of
+  pdfme: head, column widths, table, head, body and column styles.
+- Tables grow like in pdfme: on a blank base PDF, a table taller than its
+  box pushes the schemas below it down and goes on over new pages. The
+  head can repeat on each page (`repeatHead`). On a PDF base the table
+  draws its full height and makes no new pages, like pdfme.
+- Table image columns (`columnStyles.cellType: "image"`): PNG and JPEG
+  data URLs in the cells, with `imageHeightMode` (`fixed`, `auto`) and
+  `imageHeight`, like pdfme.
+- A table row with fewer cells than the head throws, like pdfme. A
+  column without a width in `headWidthPercentages` throws a clear error
+  (pdfme fails on it too).
 - New schema types, like in pdfme: `multiVariableText` (a text with
   `{name}` variables, the input is a JSON object of values), `signature`
   (drawn like an image) and `circleMark` (a circle line when the input is

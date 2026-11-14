@@ -21,6 +21,7 @@
 
 import { saSentences } from './sa_text.mjs';
 import { fieldCases } from './field_cases.mjs';
+import { tableCases } from './table_cases.mjs';
 
 const blank = (staticSchema) => ({
   width: 150,
@@ -834,3 +835,6 @@ cases.push(
   landscape,
   qrJapanese,
 );
+
+// tables (table_cases.mjs)
+cases.push(...tableCases);

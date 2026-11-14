@@ -22,6 +22,7 @@ export 'src/schemas/shape_plugins.dart';
 export 'src/schemas/signature_plugin.dart';
 export 'src/svg/svg_plugin.dart'
     show CheckboxPlugin, RadioGroupPlugin, SvgPlugin;
+export 'src/table/table_plugin.dart';
 export 'src/template.dart';
 export 'src/text/multi_variable_text_plugin.dart';
 export 'src/text/text_plugin.dart';

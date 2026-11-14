@@ -7,6 +7,7 @@ import 'schemas/select_plugin.dart';
 import 'schemas/shape_plugins.dart';
 import 'schemas/signature_plugin.dart';
 import 'svg/svg_plugin.dart';
+import 'table/table_plugin.dart';
 import 'text/multi_variable_text_plugin.dart';
 import 'text/text_plugin.dart';
 
@@ -46,6 +47,7 @@ const Map<String, SchemaPlugin> builtInPlugins = <String, SchemaPlugin>{
   'Multi-Variable Text': MultiVariableTextPlugin(),
   'Signature': SignaturePlugin(),
   'Circle Mark': CircleMarkPlugin(),
+  'Table': TablePlugin(),
 };
 
 /// The first plugin of [plugins] for schema [type], like pdfme's

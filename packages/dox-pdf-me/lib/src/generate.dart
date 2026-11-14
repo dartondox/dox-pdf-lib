@@ -5,12 +5,14 @@ import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 
 import 'base_pdf.dart';
 import 'constants.dart';
+import 'dynamic_template.dart';
 import 'expression.dart';
 import 'fonts/font_store.dart';
 import 'options.dart';
 import 'plugin.dart';
 import 'plugins.dart';
 import 'schema.dart';
+import 'table/table_layout.dart';
 import 'template.dart';
 
 /// Makes a PDF from a pdfme [template] and [inputs], like pdfme's
@@ -69,17 +71,35 @@ class Generator {
       FontStore fonts = FontStore(doc, options.font);
       Map<Object, Object?> cache = <Object, Object?>{};
       BasePages base = await BasePages.create(doc, template, options);
-      List<Schema> allSchemas = <Schema>[
-        for (List<Schema> page in template.schemas) ...page,
-      ];
+      // pdfme: tables grow and go on over pages, on a blank base PDF only
+      bool grows =
+          template.isBlank &&
+          template.schemas.any(
+            (List<Schema> p) => p.any(isDynamicLayoutSchema),
+          );
       for (Map<String, dynamic> input in inputs) {
-        for (int j = 0; j < base.length; j++) {
+        List<List<Schema>> schemas = grows
+            ? await dynamicTemplate(
+                template,
+                (Schema s) => tableDynamicLayout(
+                  s,
+                  _value(s, input, null),
+                  fonts,
+                  template.basePdf,
+                ),
+              )
+            : template.schemas;
+        List<Schema> allSchemas = <Schema>[
+          for (List<Schema> page in schemas) ...page,
+        ];
+        int pageCount = template.isBlank ? schemas.length : base.length;
+        for (int j = 0; j < pageCount; j++) {
           PDFPage page = base.insert(j);
           PlaceholderResolver resolver = PlaceholderResolver(
             schemas: allSchemas,
             variables: <String, dynamic>{
               ...input,
-              'totalPages': base.length,
+              'totalPages': pageCount,
               'currentPage': j + 1,
             },
           );
@@ -96,20 +116,21 @@ class Generator {
           for (Schema s in template.staticSchema) {
             SchemaPlugin? plugin = renderers[s.type];
             if (plugin == null) continue;
-            String value = s.readOnly ? resolver.resolve(s) : (s.content ?? '');
+            String value = s.readOnly && s.type == 'table'
+                ? readOnlyTableValue(s, input)
+                : s.readOnly
+                ? resolver.resolve(s)
+                : (s.content ?? '');
             await plugin.pdf(props(s, value));
           }
-          List<Schema> pageSchemas = j < template.schemas.length
-              ? template.schemas[j]
+          List<Schema> pageSchemas = j < schemas.length
+              ? schemas[j]
               : const <Schema>[];
           for (Schema s in pageSchemas) {
             if (s.name.isEmpty) continue;
             SchemaPlugin? plugin = renderers[s.type];
             if (plugin == null) continue;
-            String value = s.readOnly
-                ? resolver.resolve(s)
-                : inputValue(input[s.name]);
-            await plugin.pdf(props(s, value));
+            await plugin.pdf(props(s, _value(s, input, resolver)));
           }
         }
       }
@@ -118,6 +139,27 @@ class Generator {
     } finally {
       doc.dispose();
     }
+  }
+
+  /// The value of page schema [s]: the input, or for a read-only schema
+  /// its content (with placeholders filled by [resolver]).
+  static String _value(
+    Schema s,
+    Map<String, dynamic> input,
+    PlaceholderResolver? resolver,
+  ) {
+    if (!s.readOnly) return inputValue(input[s.name]);
+    if (s.type == 'table') return readOnlyTableValue(s, input);
+    return resolver?.resolve(s) ?? (s.content ?? '');
+  }
+
+  /// pdfme's `getReadOnlyTableValue`: the input of the table when it has
+  /// one (a JSON string or a list), else the `content` of the schema.
+  /// Placeholders are not filled.
+  static String readOnlyTableValue(Schema s, Map<String, dynamic> input) {
+    Object? value = input[s.name];
+    if (value == null) return s.content ?? '';
+    return value is String ? value : jsonEncode(value);
   }
 
   /// pdfme's `input[name] || ''`, as a string.

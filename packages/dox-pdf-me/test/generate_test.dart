@@ -110,6 +110,7 @@ void main() {
           'multiVariableText',
           'signature',
           'circleMark',
+          'table',
         },
       );
     });

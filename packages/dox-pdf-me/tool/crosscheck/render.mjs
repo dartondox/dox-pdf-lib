@@ -34,6 +34,7 @@ const plugins = {
   signature: schemas.signature,
   circleMark: schemas.circleMark,
   multiVariableText: schemas.multiVariableText,
+  table: schemas.table,
 };
 
 function readFile(name) {

@@ -35,6 +35,11 @@ const int dpi = 200;
   return (0.3, 0.01);
 }
 
+/// The limits of one area of `boxes` (see the test): stricter than a
+/// schema box, as a table area holds many cells.
+(double, double) _areaLimit(String compare) =>
+    compare == 'lines' ? (0.3, 0.05) : (0.3, 0.005);
+
 /// The linear barcode types.
 final Set<String> _linear = barcodeTypes.toSet().difference(<String>{
   'qrcode',
@@ -143,6 +148,40 @@ void main() {
           if (bars != null) {
             report.writeln('$name p$p ${s['name']} ($type): ${bars.$1}');
             if (!bars.$2) failures.add('$name p$p ${s['name']}: ${bars.$1}');
+          }
+        }
+        // Areas of a case (`boxes`, per page, mm), for schemas that move:
+        // a table grows and goes on over pages, so its template box is
+        // not where it is drawn. The whole page is one area too, so a
+        // page break at another row moves its ink box.
+        List<dynamic> boxes = c['boxes'] as List<dynamic>? ?? <dynamic>[];
+        if (c.containsKey('boxes')) {
+          for (Object? area in <Object?>[
+            <String, dynamic>{
+              'name': 'page',
+              'position': <String, dynamic>{'x': 0, 'y': 0},
+              'width': a.width / (dpi / 25.4),
+              'height': a.height / (dpi / 25.4),
+            },
+            if (p < boxes.length) ...boxes[p] as List<dynamic>,
+          ]) {
+            Map<String, dynamic> m = area! as Map<String, dynamic>;
+            Map<String, dynamic> box = <String, dynamic>{
+              ...m,
+              'position':
+                  m['position'] ?? <String, dynamic>{'x': m['x'], 'y': m['y']},
+            };
+            FieldDiff d = fieldDifference(a, b, box, dpi, margin: 0);
+            (double, double) limit = _areaLimit(compare);
+            String row =
+                '$name p$p area ${_mm((box['position'] as Map<String, dynamic>)['x'] as num)},'
+                '${_mm((box['position'] as Map<String, dynamic>)['y'] as num)}: '
+                'ink ${d.ink.toStringAsFixed(2)} mm, '
+                'pixels ${(d.pixels * 100).toStringAsFixed(3)} %';
+            report.writeln(row);
+            if (d.ink > limit.$1 || d.pixels > limit.$2) {
+              failures.add('$row (limit ${limit.$1} mm, ${limit.$2 * 100} %)');
+            }
           }
         }
       }
@@ -264,7 +303,7 @@ Object? _resolve(Object? value) {
   };
 }
 
-String _mm(double v) => v.toStringAsFixed(2);
+String _mm(num v) => v.toStringAsFixed(2);
 
 /// The schemas of each page of the template of case [c]: the schemas of
 /// the page and the static schemas of a blank base PDF.

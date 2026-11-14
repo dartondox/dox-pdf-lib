@@ -162,6 +162,7 @@ dox_pdf_lib API, so one import is enough.
 | `multiVariableText` | `MultiVariableTextPlugin` |
 | `signature` | `SignaturePlugin` (drawn like `image`) |
 | `circleMark` | `CircleMarkPlugin` |
+| `table` | `TablePlugin` |
 
 The text props work like in pdfme: `fontName`, `fontSize`, `alignment`
 (`left`, `center`, `right`, `justify`), `verticalAlignment` (`top`,
@@ -173,7 +174,27 @@ Khmer and Myanmar text breaks between words, like in pdfme: the words come
 from the same ICU word lists as in Node.js 24 (`dictionaryWordBreaks` of
 dox_pdf_lib).
 
-`table` is not supported yet.
+A `table` value is a JSON string of rows, eg. `[["Alice","Paris"]]` (a
+list of lists works too). The props work like in pdfme: `head`,
+`showHead`, `repeatHead`, `headWidthPercentages`, `tableStyles`
+(`borderColor`, `borderWidth`), `headStyles` and `bodyStyles` (cell
+styles; `bodyStyles` also has `alternateBackgroundColor`) and
+`columnStyles` (`alignment` and `verticalAlignment` per column). A cell
+style has the text props plus `borderWidth` and `padding` per side. A
+read-only table uses its input when there is one, else its `content`.
+
+A column with `columnStyles.cellType` `"image"` shows PNG and JPEG data
+URLs, fitted in the cell (`contain`, placed by the cell alignment). The
+head of the column stays text. `imageHeightMode` `fixed` (default) makes
+the image `imageHeight` mm high (20 by default), also when the cell is
+empty or not an image; `auto` follows the image ratio and fits on one
+page. Like pdfme, an empty cell or a value that is not a PNG or JPEG
+data URL draws no image.
+
+On a blank base PDF, a table that is taller than its box grows. The
+schemas below it move down, and the table goes on over new pages (pdfme's
+dynamic layout). On a PDF base, the table draws its full height on the
+same page, like pdfme.
 
 Barcodes: a value that pdfme's check refuses (eg. a bad EAN-13 check digit)
 draws nothing, like in pdfme. A value that passes that check but that
@@ -273,8 +294,15 @@ This list compares with pdfme 6.2.8.
   like `{name}`, `{order.id}`, `{currentPage}`, `{totalPages}`, `{date}` and
   `{dateTime}`. pdfme also runs JavaScript expressions, like `{price * 2}`.
   Those stay as they are.
-- **Not supported yet:** `overflow: "expand"` (the text box does not grow),
-  inline markdown text, tables, font URLs, base PDFs
+- **Tables:** a column without a width in `headWidthPercentages` throws
+  an error. pdfme gives that column no width (NaN): pdf-lib then throws
+  when it draws the column, or the column comes out broken when nothing
+  is drawn in it. A row with fewer cells than the head throws, like pdfme
+  (`Cannot read properties of undefined (reading 'split')`). Number cells
+  work (pdfme throws `raw.split is not a function` on a blank base PDF).
+- **Not supported yet:** `overflow: "expand"` (the text box does not grow,
+  and it does not move other schemas), `list`, inline markdown text,
+  font URLs, base PDFs
   with a user password (`basePdfPassword`), and link annotations of the base PDF.
 - **multiVariableText input as a map:** pdfme needs a JSON string and
   throws for an object when the schema has variables. This package also
