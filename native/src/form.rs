@@ -2230,6 +2230,30 @@ pub const SET_IMAGE: i32 = 51;
 pub const WIDGETS: i32 = 52;
 pub const PAGE_OF_ANNOT: i32 = 53;
 
+/// Ops that do not change the document, so its `generation` stays.
+fn read_only(op: i32) -> bool {
+    matches!(
+        op,
+        HAS_XFA
+            | GET_FIELDS
+            | FIND_FIELD
+            | NAME
+            | FLAGS
+            | NEEDS_UPDATE
+            | IS_DIRTY
+            | TEXT_GET
+            | ALIGNMENT_GET
+            | MAX_LENGTH_GET
+            | IS_CHECKED
+            | RADIO_OPTIONS
+            | RADIO_SELECTED
+            | CHOICE_OPTIONS
+            | CHOICE_SELECTED
+            | WIDGETS
+            | PAGE_OF_ANNOT
+    )
+}
+
 fn field_kind(pdf: &Document, field: ObjectId) -> Result<i32> {
     kind(pdf, field).ok_or_else(|| Error::generic("the field is gone or is not a form field"))
 }
@@ -2575,7 +2599,12 @@ pub extern "C" fn dox_pdf_form(
         };
         let s = strings(slice(bytes, bytes_len)?)?;
         let mut result = [0i64; 2];
-        with_doc(handle, |d| form_call(d, op, ref_from_i64(field), n, &s, &mut result))?;
+        let run = |d: &mut Doc| form_call(d, op, ref_from_i64(field), n, &s, &mut result);
+        if read_only(op) {
+            with_doc(handle, run)?;
+        } else {
+            with_doc_mut(handle, run)?;
+        }
         // SAFETY: Dart passes room for 2 values.
         unsafe {
             *out = result[0];
