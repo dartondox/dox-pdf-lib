@@ -1,0 +1,173 @@
+name: CI
+
+# Every push to main and every pull request: Rust checks, then the Dart
+# tests (with the pdf-lib crosscheck).
+#
+# A tag like v<version> (it must match the version in pubspec.yaml):
+# 1. build the library for the 5 targets,
+# 2. upload them to the GitHub release of the tag, with SHA256SUMS,
+# 3. fill `_sha256` in hook/build.dart from SHA256SUMS, publish the package
+#    to pub.dev, and push the new hashes to main.
+# The hook downloads these files, so users do not need Rust.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore: ['**.md']
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  LIB: dox_pdf_lib
+
+jobs:
+  # also on a release tag: a red test stops the build, the release and the publish
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: stable
+      # pdf-lib (Node.js) for the crosscheck test
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+      # the build is kept: the Dart build hook uses native/target/release
+      - name: Rust checks
+        working-directory: native
+        run: |
+          cargo fmt --check
+          cargo clippy --release --all-targets -- -D warnings
+          cargo test --release
+          cargo build --release
+      - name: Dart checks
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed .
+          dart analyze --fatal-infos .
+      - name: Install pdf-lib for the crosscheck
+        working-directory: tool/crosscheck
+        run: npm ci
+      # the crosscheck must run here, not be skipped
+      - name: Dart tests
+        run: |
+          test -d tool/crosscheck/node_modules/pdf-lib
+          dart test --concurrency=4
+
+  # every PR builds the 5 targets too, so a Windows break shows before a release
+  build:
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin, file: libdox_pdf_lib.dylib, asset: dox_pdf_lib-macos-arm64.dylib }
+          - { os: macos-latest, target: x86_64-apple-darwin, file: libdox_pdf_lib.dylib, asset: dox_pdf_lib-macos-x64.dylib }
+          # 22.04: an older glibc, so the library loads on more Linux systems
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, file: libdox_pdf_lib.so, asset: dox_pdf_lib-linux-x64.so }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, file: libdox_pdf_lib.so, asset: dox_pdf_lib-linux-arm64.so }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, file: dox_pdf_lib.dll, asset: dox_pdf_lib-windows-x64.dll }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check that the tag matches pubspec.yaml
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          v=$(sed -nE 's/^version:[[:space:]]*([^[:space:]]+).*/\1/p' pubspec.yaml)
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME, pubspec $v"; exit 1; }
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - name: Build
+        shell: bash
+        working-directory: native
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          mkdir -p ../dist
+          cp target/${{ matrix.target }}/release/${{ matrix.file }} ../dist/${{ matrix.asset }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Upload to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        working-directory: dist
+        run: |
+          sha256sum "$LIB"-* > SHA256SUMS
+          cat SHA256SUMS
+          # a version with "-" in it is a prerelease
+          pre=()
+          case "$TAG" in *-*) pre=(--prerelease) ;; esac
+          # a re-run replaces the files of the release
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" ./* --clobber --repo "$GITHUB_REPOSITORY"
+            # a deleted and pushed again tag leaves the release as a draft
+            gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" ./* --repo "$GITHUB_REPOSITORY" ${pre[@]+"${pre[@]}"} \
+              --title "$TAG" --notes "Ready-built $LIB libraries. See SHA256SUMS."
+          fi
+
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    environment: pub.dev
+    permissions:
+      id-token: write # pub.dev automated publishing (OIDC)
+      contents: write # push the hashes to main
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      # the tag must be on main, so the published code is what main has
+      - name: Check that the tag is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" HEAD && git checkout "$GITHUB_SHA"
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: stable
+      - name: Fill the hashes
+        run: dart run tool/native_hashes.dart "$GITHUB_REF_NAME"
+      - name: Publish to pub.dev
+        run: dart pub publish --force
+      - name: Push the hashes to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git stash
+          git checkout main
+          git stash pop
+          git commit -am "Hashes of the $GITHUB_REF_NAME libraries"
+          git push origin main

@@ -1,0 +1,21 @@
+[package]
+name = "dox_pdf_lib"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# rayon: parse the objects of a big file on all cores
+lopdf = { version = "0.47.0", default-features = false, features = ["rayon"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+# unwind, not abort: every export catches a panic (catch_unwind) and returns
+# an error, so a bad PDF can not end the process
+panic = "unwind"
+strip = true
