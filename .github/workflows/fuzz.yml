@@ -1,6 +1,6 @@
 name: Fuzz
 
-# Runs each fuzz target in native/fuzz for 60 s: random bytes into the
+# Runs each fuzz target in packages/dox-pdf-lib/native/fuzz for 60 s: random bytes into the
 # code that reads what the user gives (PDF files, fonts, images, SVG
 # paths). A crash, a hang or a big allocation fails the run and
 # uploads the input that caused it.
@@ -8,9 +8,9 @@ name: Fuzz
 on:
   push:
     branches: [main]
-    paths: ['native/**', '.github/workflows/fuzz.yml']
+    paths: ['packages/dox-pdf-lib/native/**', '.github/workflows/fuzz.yml']
   pull_request:
-    paths: ['native/**', '.github/workflows/fuzz.yml']
+    paths: ['packages/dox-pdf-lib/native/**', '.github/workflows/fuzz.yml']
 
 permissions:
   contents: read
@@ -38,7 +38,7 @@ jobs:
       # the fuzz crate builds the same source, so it must use the same
       # dependencies as native/Cargo.toml (dependabot only updates that one)
       - name: Check that the fuzz dependencies match
-        working-directory: native
+        working-directory: packages/dox-pdf-lib/native
         run: |
           # the check reads `[dependencies]` style sections only, not
           # `[dependencies.name]` tables
@@ -54,7 +54,7 @@ jobs:
           diff <(deps Cargo.toml) <(deps fuzz/Cargo.toml)
       # use the lock file of native/, so the versions are the same too
       - name: Copy the lock file
-        working-directory: native
+        working-directory: packages/dox-pdf-lib/native
         run: cp Cargo.lock fuzz/Cargo.lock
       # cargo fuzz needs nightly (sanitizer flags)
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -62,14 +62,14 @@ jobs:
           toolchain: nightly
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: native/fuzz
+          workspaces: packages/dox-pdf-lib/native/fuzz
       # a prebuilt cargo-fuzz, no build from source
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-fuzz
       # new inputs go to a temp folder, the seeds in fuzz/corpus stay as they are
       - name: Fuzz ${{ matrix.target }}
-        working-directory: native
+        working-directory: packages/dox-pdf-lib/native
         env:
           TARGET: ${{ matrix.target }}
           MAX_LEN: ${{ matrix.max_len }}
@@ -83,4 +83,4 @@ jobs:
         if: failure()
         with:
           name: fuzz-${{ matrix.target }}
-          path: native/fuzz/artifacts
+          path: packages/dox-pdf-lib/native/fuzz/artifacts

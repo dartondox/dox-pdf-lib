@@ -1,3 +1,7 @@
+## Unreleased
+
+- The ready-built libraries now come from the GitHub release with the tag `dox_pdf_lib-v<version>` (it was `v<version>`). The repo is now a workspace with more packages, and each package has its own tags.
+
 ## 0.0.1
 
 - First version. The core of the pdf-lib API, with a Rust core (lopdf):

@@ -1,8 +1,8 @@
 // Fills the `_sha256` map in hook/build.dart from a GitHub release.
-// The release workflow (.github/workflows/ci.yaml) runs it before it
-// publishes. You can also run it by hand:
+// The release workflow (.github/workflows/release.yaml) runs it before it
+// publishes. You can also run it by hand, in packages/dox-pdf-lib:
 //
-//   dart run tool/native_hashes.dart v<version>
+//   dart run tool/native_hashes.dart dox_pdf_lib-v<version>
 //
 // It downloads `SHA256SUMS` of the release and writes the hashes into
 // hook/build.dart.
@@ -10,23 +10,25 @@ import 'dart:convert';
 import 'dart:io';
 
 Future<void> main(List<String> args) async {
-  if (args.length != 1 || !args.first.startsWith('v')) {
-    stderr.writeln('usage: dart run tool/native_hashes.dart v<version>');
-    exit(64);
-  }
-  String tag = args.first;
   File hook = File('hook/build.dart');
   if (!hook.existsSync()) {
-    stderr.writeln('${hook.path} not found. Run it from the repo root.');
+    stderr.writeln('${hook.path} not found. Run it in packages/dox-pdf-lib.');
     exit(66);
   }
-  String source = hook.readAsStringSync();
-  String releases = RegExp(r"const String _releases =\s*'([^']+)';")
-      .firstMatch(source)![1]!;
   String package = RegExp(
     r'^name:\s*(\S+)',
     multiLine: true,
   ).firstMatch(File('pubspec.yaml').readAsStringSync())![1]!;
+  if (args.length != 1 || !args.first.startsWith('$package-v')) {
+    stderr.writeln(
+      'usage: dart run tool/native_hashes.dart $package-v<version>',
+    );
+    exit(64);
+  }
+  String tag = args.first;
+  String source = hook.readAsStringSync();
+  String releases = RegExp(r"const String _releases =\s*'([^']+)';")
+      .firstMatch(source)![1]!;
 
   HttpClient client = HttpClient();
   String sums;

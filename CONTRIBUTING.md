@@ -1,6 +1,10 @@
-# Contributing to dox_pdf_lib
+# Contributing to dox-pdf-lib
 
 Thank you for your help.
+
+This repo is a Dart pub workspace. The packages are in `packages/`:
+`dox_pdf_lib` in `packages/dox-pdf-lib` and `dox_pdf_me` in
+`packages/dox-pdf-me`. Run `dart pub get` once at the root.
 
 ## Bugs and feature requests
 
@@ -13,18 +17,30 @@ For security problems, see [SECURITY.md](SECURITY.md). Do not open a public issu
 Send changes as pull requests against `main`. Before you ask for review:
 
 - CI is green.
-- In `native/`: `cargo fmt`, `cargo clippy --release --all-targets -- -D warnings` and `cargo test` pass.
-- `dart format` is clean.
-- `dart analyze --fatal-infos` has no warnings.
-- Add a changelog entry under `## Unreleased` in `CHANGELOG.md`.
+- In `packages/dox-pdf-lib/native/`: `cargo fmt`, `cargo clippy --release --all-targets -- -D warnings` and `cargo test` pass.
+- `dart format` is clean (run it at the root).
+- `dart analyze --fatal-infos` has no warnings (run it at the root).
+- Add a changelog entry under `## Unreleased` in the `CHANGELOG.md` of the package.
 - Do not change versions in the PR.
 
-## Goal
+## Releases
+
+Each package has its own version and its own tags: `<package>-v<version>`,
+eg. `dox_pdf_lib-v0.0.2` or `dox_pdf_me-v0.0.1`. A tag on `main` runs
+`.github/workflows/release.yaml`. It runs the tests first, and publishes
+the package to pub.dev only when they pass.
+
+## dox_pdf_lib
+
+The rest of this file is about `dox_pdf_lib`. The paths are in
+`packages/dox-pdf-lib`.
+
+### Goal
 
 The same API, names, defaults and behavior as pdf-lib. When you add a
 feature, read the pdf-lib source of it first and match it.
 
-## Native layout
+### Native layout
 
 The rules below keep the code fast, and let features be built in parallel
 without merge conflicts.
@@ -67,7 +83,7 @@ without merge conflicts.
 - Load must never crash the process on a broken PDF. It returns an error.
 - Walks over the object graph have a limit (`MAX_DEPTH`) and skip loops. Use explicit stacks, not deep recursion.
 
-## Tests
+### Tests
 
 Every new feature and every bug fix must add tests.
 
