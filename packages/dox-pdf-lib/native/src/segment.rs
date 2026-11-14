@@ -139,7 +139,9 @@ const ZWNJ: u32 = 0x200c;
 
 fn dictionary(engine: &Engine) -> Option<&'static DictionaryBreakData<'static>> {
     static DICTIONARIES: [OnceLock<Option<&'static DictionaryBreakData<'static>>>; 4] = [const { OnceLock::new() }; 4];
-    let index = ENGINES.iter().position(|e| std::ptr::eq(*e, engine))?;
+    // by name, not by address: each use of a `const` may be a new copy,
+    // so `ptr::eq` failed in debug builds and no dictionary loaded
+    let index = ENGINES.iter().position(|e| e.dictionary == engine.dictionary)?;
     *DICTIONARIES[index].get_or_init(|| {
         let key = DataMarkerAttributes::try_from_str(engine.dictionary).ok()?;
         let response: DataResponse<SegmenterDictionaryExtendedV2> = Baked

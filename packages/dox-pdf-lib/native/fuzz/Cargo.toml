@@ -70,3 +70,10 @@ path = "fuzz_targets/segment.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "conformance"
+path = "fuzz_targets/conformance.rs"
+test = false
+doc = false
+bench = false

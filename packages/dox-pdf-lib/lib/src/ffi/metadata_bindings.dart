@@ -7,6 +7,7 @@ import 'dart:ffi';
 /// Set modes.
 const int metaText = 0;
 const int metaLiteral = 1;
+const int metaName = 2;
 const int metaShowTitle = 4;
 
 /// Returns `statusNotFound` when the key is not set.
@@ -38,4 +39,21 @@ external int doxPdfMetaSet(
   Pointer<Uint8> value,
   int valueLength,
   int mode,
+);
+
+/// `out[0]` = the Info keys, each followed by a 0 byte.
+@Native<Int32 Function(Pointer<Void>, Pointer<Int64>)>(
+  symbol: 'dox_pdf_meta_keys',
+  isLeaf: true,
+)
+external int doxPdfMetaKeys(Pointer<Void> handle, Pointer<Int64> out);
+
+@Native<Int32 Function(Pointer<Void>, Pointer<Uint8>, Int64)>(
+  symbol: 'dox_pdf_meta_remove',
+  isLeaf: true,
+)
+external int doxPdfMetaRemove(
+  Pointer<Void> handle,
+  Pointer<Uint8> key,
+  int keyLength,
 );

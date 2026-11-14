@@ -1,3 +1,11 @@
+## Unreleased
+
+- New: PDF/X and PDF/A. `setConformance(standard, iccProfile: ..., outputConditionIdentifier: ...)` sets up a document for PDF/X-1a, PDF/X-3, PDF/X-4, PDF/A-1b, PDF/A-2b, PDF/A-2u, PDF/A-3b or PDF/A-3u: the output intent now, and at save the PDF version, the file `/ID`, XMP metadata in sync with the document info, and the PDF/X info keys. `checkConformance(standard)` lists what is still wrong in your content (fonts not embedded, transparency, colors, page boxes, annotations, actions, attachments, ...), with the page and a plain message. The default save is not changed. See "PDF/X and PDF/A" in the README.
+- New: `addOutputIntent`, `setXmpMetadata`, `getXmpMetadata` and `createXmpMetadata`.
+- New: custom document info keys: `setCustomMetadata`, `getCustomMetadata`, `getCustomMetadataKeys`, `removeCustomMetadata`. And `setTrapped` / `getTrapped`.
+- Fix: in a debug build of the native library, the Thai, Lao, Khmer and Myanmar dictionaries did not load, so `dictionaryWordBreaks` found no breaks inside those words. The code found the dictionary by the address of a constant, and a debug build can copy a constant. It now finds it by name. The release library was not affected.
+- New fuzz target `conformance` (ICC profile header and XMP text). The `load` target also runs `checkConformance`.
+
 ## 0.0.2
 
 - Fix: `embedPng` with a broken palette (its length is not a multiple of 3) now throws an "Invalid PNG" error. Before, the png crate panicked inside (the panic was caught, but the message was an internal error). Found by the image fuzz target.

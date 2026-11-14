@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../ffi/attachment_bindings.dart';
+import '../ffi/conformance_bindings.dart';
 import '../ffi/document_bindings.dart';
 import '../ffi/draw_bindings.dart';
 import '../ffi/embed_bindings.dart';
@@ -21,6 +22,7 @@ import 'sizes.dart';
 
 // One part per feature area, so a new area is one new line here.
 part 'attachment.dart';
+part 'conformance.dart';
 part 'draw.dart';
 part 'embed.dart';
 part 'font.dart';

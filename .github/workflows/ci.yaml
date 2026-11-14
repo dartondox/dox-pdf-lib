@@ -83,13 +83,42 @@ jobs:
       # (HarfBuzz) for the language matrix (test/language_test.dart)
       - name: Install poppler-utils and hb-shape
         run: sudo apt-get update && sudo apt-get install -y poppler-utils libharfbuzz-bin
-      # the crosscheck must run here, not be skipped
+      # veraPDF (Java) checks the PDF/A files of test/conformance_test.dart.
+      # A fixed version, checked with sha256; a headless install
+      - name: Install veraPDF
+        run: |
+          zip="$RUNNER_TEMP/verapdf.zip"
+          curl -sSfL -o "$zip" https://software.verapdf.org/rel/1.30/verapdf-greenfield-1.30.4-installer.zip
+          echo "04415ef3f149526a3048b9889723e81320ddf013bd891bcc7f0f297f3eadcc23  $zip" | sha256sum -c -
+          unzip -q "$zip" -d "$RUNNER_TEMP/verapdf-installer"
+          cat > "$RUNNER_TEMP/verapdf-auto.xml" <<EOF
+          <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+          <AutomatedInstallation langpack="eng">
+          <com.izforge.izpack.panels.htmlhello.HTMLHelloPanel id="welcome"/>
+          <com.izforge.izpack.panels.target.TargetPanel id="install_dir"><installpath>$RUNNER_TEMP/verapdf</installpath></com.izforge.izpack.panels.target.TargetPanel>
+          <com.izforge.izpack.panels.packs.PacksPanel id="sdk_pack_select">
+          <pack index="0" name="veraPDF GUI" selected="true"/>
+          <pack index="1" name="veraPDF Batch files" selected="true"/>
+          <pack index="2" name="veraPDF Validation model" selected="true"/>
+          <pack index="3" name="veraPDF Documentation" selected="false"/>
+          <pack index="4" name="veraPDF Sample Plugins" selected="false"/>
+          </com.izforge.izpack.panels.packs.PacksPanel>
+          <com.izforge.izpack.panels.install.InstallPanel id="install"/>
+          <com.izforge.izpack.panels.finish.FinishPanel id="finish"/>
+          </AutomatedInstallation>
+          EOF
+          java -jar "$RUNNER_TEMP"/verapdf-installer/verapdf-greenfield-1.30.4/verapdf-izpack-installer-1.30.4.jar "$RUNNER_TEMP/verapdf-auto.xml"
+          echo "$RUNNER_TEMP/verapdf" >> "$GITHUB_PATH"
+      # the crosscheck and veraPDF must run here, not be skipped
       - name: Dart tests
         working-directory: packages/dox-pdf-lib
+        env:
+          REQUIRE_VERAPDF: '1'
         run: |
           test -d tool/crosscheck/node_modules/pdf-lib
           command -v pdftoppm
           command -v hb-shape
+          command -v verapdf
           dart test --concurrency=4
 
   test-pdf-me:

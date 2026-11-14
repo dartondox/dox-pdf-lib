@@ -86,6 +86,7 @@ pub struct Doc {
     pub generation: u64,
     pub form: crate::form::FormState,
     pub fonts: crate::font::Fonts,
+    pub conformance: crate::conformance::State,
 }
 
 pub type Shared = Mutex<Doc>;

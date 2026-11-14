@@ -14,9 +14,11 @@ use crate::ffi_util::*;
 pub const PRODUCER: &str = "dox_pdf_lib (https://github.com/dartondox/dox-pdf-lib)";
 
 /// Set modes from Dart.
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 pub const MODE_TEXT: i32 = 0;
 pub const MODE_LITERAL: i32 = 1;
+/// The value is a PDF name (`/Trapped /True`).
+pub const MODE_NAME: i32 = 2;
 /// Also set `/ViewerPreferences /DisplayDocTitle true` (setTitle option).
 pub const FLAG_SHOW_TITLE: i32 = 4;
 
@@ -122,6 +124,7 @@ pub fn get(pdf: &Document, key: &[u8]) -> Result<Option<String>> {
     match value {
         None => Ok(None),
         Some(Object::String(bytes, _)) => Ok(Some(decode_text(bytes))),
+        Some(Object::Name(n)) if key == b"Trapped" => Ok(Some(String::from_utf8_lossy(n).into_owned())),
         Some(other) => Err(Error::generic(format!(
             "Expected instance of PDFHexString or PDFString, but got instance of {}",
             other.enum_variant()
@@ -130,7 +133,9 @@ pub fn get(pdf: &Document, key: &[u8]) -> Result<Option<String>> {
 }
 
 pub fn set(pdf: &mut Document, key: &[u8], value: &str, mode: i32) -> Result<()> {
-    let object = if mode & MODE_LITERAL != 0 {
+    let object = if mode & MODE_NAME != 0 {
+        Object::Name(value.as_bytes().to_vec())
+    } else if mode & MODE_LITERAL != 0 {
         Object::String(value.as_bytes().to_vec(), StringFormat::Literal)
     } else {
         text_object(value)
@@ -161,6 +166,19 @@ pub fn set(pdf: &mut Document, key: &[u8], value: &str, mode: i32) -> Result<()>
         prefs.set("DisplayDocTitle", Object::Boolean(true));
     }
     Ok(())
+}
+
+/// The keys of the Info dict, in file order.
+pub fn keys(pdf: &Document) -> Vec<Vec<u8>> {
+    info(pdf)
+        .map(|d| d.iter().map(|(k, _)| k.clone()).collect())
+        .unwrap_or_default()
+}
+
+pub fn remove(pdf: &mut Document, key: &[u8]) {
+    if info(pdf).is_some_and(|d| d.has(key)) {
+        info_mut(pdf).remove(key);
+    }
 }
 
 /// pdf-lib's `updateInfoDict`, run by create and load.
@@ -212,6 +230,33 @@ pub extern "C" fn dox_pdf_meta_set(
     })
 }
 
+/// `out[0]` = a `Bytes` address: the Info keys, each followed by a 0 byte.
+#[unsafe(no_mangle)]
+pub extern "C" fn dox_pdf_meta_keys(handle: *const c_void, out: *mut i64) -> i32 {
+    call(|| {
+        with_doc(handle, |d| {
+            let mut all = Vec::new();
+            for k in keys(&d.pdf) {
+                all.extend_from_slice(&k);
+                all.push(0);
+            }
+            write_out(out, bytes_into_raw(all));
+            Ok(OK)
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn dox_pdf_meta_remove(handle: *const c_void, key: *const u8, key_len: i64) -> i32 {
+    call(|| {
+        let key = slice(key, key_len)?;
+        with_doc_mut(handle, |d| {
+            remove(&mut d.pdf, key);
+            Ok(OK)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +270,17 @@ mod tests {
         assert_eq!(get(&d.pdf, b"Author").unwrap(), None);
         set(&mut d.pdf, b"Lang", "en-US", MODE_LITERAL).unwrap();
         assert_eq!(get(&d.pdf, b"Lang").unwrap().unwrap(), "en-US");
+    }
+
+    #[test]
+    fn custom_keys_and_trapped() {
+        let mut d = create(true, b"D:20200101000000Z");
+        set(&mut d.pdf, b"Client", "ACME", MODE_TEXT).unwrap();
+        set(&mut d.pdf, b"Trapped", "False", MODE_NAME).unwrap();
+        assert_eq!(get(&d.pdf, b"Trapped").unwrap().unwrap(), "False");
+        assert!(keys(&d.pdf).contains(&b"Client".to_vec()));
+        remove(&mut d.pdf, b"Client");
+        assert_eq!(get(&d.pdf, b"Client").unwrap(), None);
     }
 
     #[test]

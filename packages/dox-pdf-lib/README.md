@@ -262,6 +262,204 @@ page.drawText('Filled in on top', x: 50, y: 50);
 - `drawPage` takes `x`, `y`, `xScale`, `yScale`, `width`, `height`, `rotate`, `xSkew`, `ySkew`, `opacity` and `blendMode`.
 - To make many files from one template, load the template once and embed its pages into each new document. Shared parts, like fonts, are copied only once per document.
 
+### PDF/X and PDF/A
+
+PDF/X is for print. PDF/A is for long-term archives. One call,
+`setConformance`, sets up a document for one of these standards:
+
+| Standard | For | Transparency | Colors | Attachments |
+| --- | --- | --- | --- | --- |
+| PDF/X-1a | print | no | CMYK, gray and spot only | do not use |
+| PDF/X-3 | print | no | must match the output profile | do not use |
+| PDF/X-4 | print | yes | must match the output profile | do not use |
+| PDF/A-1b | archive | no | must match the output profile | no |
+| PDF/A-2b, PDF/A-2u | archive | yes | must match the output profile | PDF/A files only |
+| PDF/A-3b, PDF/A-3u | archive | yes | must match the output profile | any file, with `afRelationship` |
+
+The "u" levels also need Unicode text. Fonts from `embedFont` with a font
+file have it.
+
+"Must match the output profile" means: RGB colors (`rgb()`, JPEG and PNG
+images in RGB) need an RGB profile. CMYK colors (`cmyk()`, CMYK JPEGs)
+need a CMYK profile. Gray works with both.
+
+#### PDF/A
+
+```dart
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dox_pdf_lib/dox_pdf_lib.dart';
+
+Future<void> main() async {
+  // You bring the ICC profile. dox_pdf_lib ships none.
+  Uint8List srgb = File('sRGB2014.icc').readAsBytesSync();
+
+  PDFDocument doc = await PDFDocument.create();
+  doc.setTitle('Annual report');
+  doc.setAuthor('Jane Doe');
+  doc.setConformance(
+    PDFStandard.pdfA2b,
+    iccProfile: srgb,
+    outputConditionIdentifier: 'sRGB IEC61966-2.1',
+  );
+
+  // The 14 standard fonts (Helvetica, ...) are never embedded. Use a font file.
+  PDFFont font = await doc.embedFont(
+    File('NotoSans-Regular.ttf').readAsBytesSync(),
+    subset: true,
+  );
+  PDFPage page = doc.addPage();
+  page.drawText(
+    'Kept for a long time',
+    x: 50,
+    y: 750,
+    font: font,
+    color: rgb(0, 0, 0),
+  );
+
+  for (ConformanceIssue issue in doc.checkConformance(PDFStandard.pdfA2b)) {
+    print('${issue.kind.name}: $issue');
+  }
+  File('report.pdf').writeAsBytesSync(await doc.save());
+}
+```
+
+For PDF/A-3, attach files with a relationship and a MIME type:
+
+```dart
+await doc.attach(
+  File('invoice.xml').readAsBytesSync(),
+  'invoice.xml',
+  mimeType: 'text/xml',
+  afRelationship: AFRelationship.data,
+);
+```
+
+#### PDF/X
+
+```dart
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:dox_pdf_lib/dox_pdf_lib.dart';
+
+Future<void> main() async {
+  // The CMYK profile of your printer, eg. from the ECI (FOGRA39).
+  Uint8List coated = File('ISOcoated_v2_eci.icc').readAsBytesSync();
+
+  PDFDocument doc = await PDFDocument.create();
+  doc.setTitle('Flyer');
+  doc.setTrapped(Trapped.no);
+  doc.setConformance(
+    PDFStandard.pdfX1a,
+    iccProfile: coated,
+    outputConditionIdentifier: 'FOGRA39',
+    outputCondition: 'Offset printing, coated paper',
+    registryName: 'http://www.color.org',
+  );
+
+  PDFFont font = await doc.embedFont(
+    File('NotoSans-Regular.ttf').readAsBytesSync(),
+    subset: true,
+  );
+  PDFPage page = doc.addPage(<double>[612, 792]);
+  // PDF/X needs a TrimBox: the size of the page after cutting.
+  page.setTrimBox(9, 9, 594, 774);
+  // PDF/X-1a: CMYK only. The default text color is RGB, so set it.
+  page.drawText(
+    'Printed in CMYK',
+    x: 50,
+    y: 700,
+    font: font,
+    color: cmyk(0, 0, 0, 1),
+  );
+
+  for (ConformanceIssue issue in doc.checkConformance(PDFStandard.pdfX1a)) {
+    print('${issue.kind.name}: $issue');
+  }
+  File('flyer.pdf').writeAsBytesSync(await doc.save());
+}
+```
+
+#### What setConformance does for you
+
+Call `setConformance` again after `PDFDocument.load`, before you save,
+also for a file that is already PDF/A or PDF/X. A plain save does not know
+the standard: it changes the version, the object streams, the
+modification date and the producer, so the file is not PDF/A or PDF/X
+any more.
+
+
+- Adds the output intent with your ICC profile. It checks the profile
+  header and throws a `PDFLibError` with a clear message when the profile
+  is broken or does not fit (eg. an RGB profile for PDF/X-1a).
+- At save: the PDF version of the standard, a file `/ID`, and XMP
+  metadata made from the title, author, dates and other info (PDF/A needs
+  them to say the same). PDF/X-1a, PDF/X-3 and PDF/A-1 are PDF 1.4, so
+  save writes no object streams for them.
+- The XMP is made again at each save, from the document info. So when
+  you load a file, its old XMP is replaced, and extra fields in it (eg.
+  `dc:rights` or your own namespaces) are lost. To keep them: read
+  `getXmpMetadata()`, add your fields to `createXmpMetadata(standard: ...)`,
+  and pass the result to `setXmpMetadata`. Save then keeps your XMP as it
+  is, so it must still match the document info.
+- PDF/X: `/Trapped` is False when you did not set it, and the
+  `/GTS_PDFXVersion` key is set.
+- PDF/A: form field appearances keep only their normal look, and the
+  form has no `NeedAppearances`.
+
+#### What you must do
+
+- Embed every font with a font file. The 14 standard fonts are never
+  embedded, so they never work. Form fields draw with Helvetica by
+  default: call `form.updateFieldAppearances(font)` with your font.
+- PDF/X-1a: CMYK, gray and spot colors only. Pass `color: cmyk(...)` to
+  every draw call (the default color is RGB) and use CMYK JPEGs.
+- PDF/X-1a, PDF/X-3 and PDF/A-1: no transparency. Do not use `opacity`
+  below 1, blend modes, or PNG images with alpha.
+- PDF/X: give each page a TrimBox (`page.setTrimBox`), and a title
+  (`setTitle`). Keep form fields and other annotations outside the
+  TrimBox.
+- Attachments: only in PDF/A-3, with `afRelationship` and `mimeType`.
+  PDF/A-2 takes only PDF/A files. PDF/A-1 takes none. Do not attach
+  files to print files (PDF/X).
+- Call `checkConformance(standard)` before you save. It lists what is
+  still wrong, with the page and a plain message. It is not a full
+  validator.
+
+#### Other calls
+
+- `addOutputIntent(subtype: ..., iccProfile: ..., outputConditionIdentifier: ...)`:
+  an output intent alone, without the other steps.
+- `setXmpMetadata(xml)`, `getXmpMetadata()`, `createXmpMetadata(standard: ...)`:
+  your own XMP. Save keeps it, also after `setConformance`.
+- `setCustomMetadata(key, value)`, `getCustomMetadata(key)`,
+  `getCustomMetadataKeys()`, `removeCustomMetadata(key)`: your own
+  document info keys. The standard keys (`Title`, ...) have their own
+  setters and are not allowed here.
+- `setTrapped(Trapped.yes)`, `getTrapped()`.
+
+#### ICC profiles
+
+dox_pdf_lib ships no ICC profile. You always pass your own.
+
+- RGB (for PDF/A): sRGB from the ICC website,
+  https://www.color.org/srgbprofiles.xalter.
+- CMYK (for PDF/X): the profile of your print shop. Common ones, eg.
+  FOGRA39 (`ISOcoated_v2_eci.icc`) or FOGRA51, come from the ECI,
+  https://www.eci.org/en/downloads.
+- PDF/X-1a, PDF/X-3 and PDF/A-1 need a version 2 profile.
+
+#### How we test it
+
+- PDF/A: CI checks the files of our tests with veraPDF, the open source
+  PDF/A validator, for PDF/A-1b, -2b, -2u, -3b and -3u. They pass.
+- PDF/X: there is no free full validator. Our tests read the saved files
+  back and check every required item: output intent, version, `/ID`,
+  XMP, info keys, TrimBox, embedded fonts and no transparency. Check your
+  final print files with a preflight tool, eg. Acrobat Preflight.
+
 ## Coming from pdf-lib
 
 The names are the same. These things change because this is Dart:

@@ -467,14 +467,17 @@ pub const SAVE_UPDATE_FIELD_APPEARANCES: i32 = 4;
 
 /// The part of save that changes the document (pdf-lib's addDefaultPage).
 /// Runs under the lock. Returns a copy to write.
-pub fn prepare_save(doc: &mut Doc, flags: i32) -> Result<Document> {
+/// Clears `SAVE_OBJECT_STREAMS` in `flags` when the standard of
+/// `setConformance` has no object streams.
+pub fn prepare_save(doc: &mut Doc, flags: &mut i32) -> Result<Document> {
+    let flags_in = *flags;
     // pdf-lib embeds pages of the same document at save
     crate::embed::flush(doc)?;
-    if flags & SAVE_ADD_DEFAULT_PAGE != 0 && page_entries(&doc.pdf)?.is_empty() {
+    if flags_in & SAVE_ADD_DEFAULT_PAGE != 0 && page_entries(&doc.pdf)?.is_empty() {
         let page = new_page(&mut doc.pdf, A4.0, A4.1);
         insert_page(&mut doc.pdf, 0, page)?;
     }
-    if flags & SAVE_UPDATE_FIELD_APPEARANCES != 0 {
+    if flags_in & SAVE_UPDATE_FIELD_APPEARANCES != 0 {
         crate::form::before_save(doc)?;
     }
     // A copy: lopdf's writer changes the document (version, xref type), and
@@ -485,6 +488,8 @@ pub fn prepare_save(doc: &mut Doc, flags: i32) -> Result<Document> {
     let mut pdf = doc.pdf.clone();
     // the custom fonts: a subset is fast; a full font is compressed once
     crate::font::write_fonts(&doc.fonts, &mut pdf)?;
+    // PDF/X and PDF/A: version, /ID, XMP, ... (only after setConformance)
+    crate::conformance::before_save(&doc.conformance, &mut pdf, flags)?;
     Ok(pdf)
 }
 
@@ -522,9 +527,10 @@ pub fn write(mut pdf: Document, flags: i32) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-#[cfg(test)]
-pub fn save(doc: &mut Doc, flags: i32) -> Result<Vec<u8>> {
-    write(prepare_save(doc, flags)?, flags)
+#[cfg(any(test, fuzzing))]
+pub fn save(doc: &mut Doc, mut flags: i32) -> Result<Vec<u8>> {
+    let pdf = prepare_save(doc, &mut flags)?;
+    write(pdf, flags)
 }
 
 /// About the size of the saved file. Only used to pick inline or thread.
@@ -582,7 +588,8 @@ pub extern "C" fn dox_pdf_load(
 #[unsafe(no_mangle)]
 pub extern "C" fn dox_pdf_save(handle: *const c_void, flags: i32, out: *mut i64, done: DoneCallback, id: i64) -> i32 {
     call(|| {
-        let pdf = with_doc_mut(handle, |d| prepare_save(d, flags))?;
+        let mut flags = flags;
+        let pdf = with_doc_mut(handle, |d| prepare_save(d, &mut flags))?;
         if estimate_size(&pdf) < ASYNC_THRESHOLD {
             write_out(out, bytes_into_raw(write(pdf, flags)?));
             return Ok(OK);
