@@ -5,21 +5,21 @@
 
 Create and edit PDF files in Dart.
 
-dox_pdf_lib has the same API as the JavaScript library [pdf-lib](https://pdf-lib.js.org).
+dox_pdf_lib follows the API of the JavaScript library [pdf-lib](https://pdf-lib.js.org). Classes and methods have the same names.
 If you know pdf-lib, you already know this package.
-The work is done by a small native core written in Rust, so it is fast.
+A small native core, written in Rust, does the work.
 
 - Create new PDFs, or load and edit existing ones.
 - Add, insert, remove, copy and merge pages.
 - Draw text, lines, shapes, SVG paths, JPEG and PNG images.
-- Use the 14 standard fonts, or embed your own TrueType and OpenType fonts, with subsets.
-- Write text in many languages, also Thai, Myanmar, Khmer, Arabic, Hebrew and Hindi.
+- Use the 14 standard fonts, or embed your own TrueType and OpenType fonts. You can embed only the letters you use (a subset).
+- Write text in many languages, including Thai, Myanmar, Khmer, Arabic, Hebrew and Hindi.
 - Read, fill, create and flatten forms.
 - Attach files, and read them back.
 - Place pages of another PDF on a page (for templates).
 - Set the title, author and other metadata.
 
-It works in any Dart program.
+It works in Dart programs on macOS, Linux and Windows. It does not work on the web. Android and iOS are not supported yet.
 
 ## Install
 
@@ -169,7 +169,7 @@ page.drawText('สวัสดีครับ', x: 50, y: 700, font: thai, size:
 ```
 
 - `embedFont` takes TrueType (`.ttf`) and OpenType (`.otf`) files. There is no `registerFontkit`: the font code is built in.
-- `subset: true` puts only the letters you use into the file. Use it for big fonts, like Chinese, Japanese and Korean fonts. A full 16 MB font makes a 14 MB PDF.
+- `subset: true` puts only the letters you use into the file. Use it for big fonts, like Chinese, Japanese and Korean fonts. Without a subset, a 16 MB font makes a PDF of about 14 MB.
 - Use `subset: false` for fonts in form fields that people will edit in a PDF viewer. A subset has only the letters known at save time, so the viewer cannot show new letters people type.
 - `features` turns OpenType features on or off, for example `features: {'liga': false}`.
 - A font file is read once and shared by all documents that use the same bytes.
@@ -245,6 +245,7 @@ page.drawText('Filled in on top', x: 50, y: 50);
 ```
 
 - `embedPdf` takes bytes, a base64 string or a loaded `PDFDocument`. `embedPage` and `embedPages` take pages.
+- By default `embedPdf` embeds only the first page, like pdf-lib. Pass page indices for more, for example `embedPdf(bytes, [0, 1])`.
 - `drawPage` takes `x`, `y`, `xScale`, `yScale`, `width`, `height`, `rotate`, `xSkew`, `ySkew`, `opacity` and `blendMode`.
 - To make many files from one template, load the template once and embed its pages into each new document. Shared parts, like fonts, are copied only once per document.
 
@@ -266,11 +267,12 @@ The names are the same. These things change because this is Dart:
 
 Errors have the pdf-lib names, for example `EncryptedPDFError`, `NoSuchFieldError` and `ExceededMaxLengthError`.
 They all extend `PDFLibError`.
+Wrong arguments throw Dart's `ArgumentError` or `RangeError`.
 
 ## Differences from pdf-lib
 
 This list compares with pdf-lib 1.17.1.
-Most of these are fixes or small extras. Most pdf-lib code works without changes.
+Most of these are fixes or small extras. Most pdf-lib code works the same after you change it to Dart.
 
 ### Documents
 
@@ -296,7 +298,7 @@ Most of these are fixes or small extras. Most pdf-lib code works without changes
 - Complex scripts (Thai, Lao, Myanmar, Khmer, Indic, Arabic, Hebrew and others) are laid out like HarfBuzz, not like fontkit. fontkit draws some of them wrong or cannot lay them out at all. Their widths are HarfBuzz widths.
 - Right-to-left text with numbers or English words follows the Unicode bidi rules. pdf-lib draws numbers in reversed order.
 - With `wordBreaks: ['']`, a line never breaks between a letter and its marks.
-- Glyphs that pdf-lib leaves out of the font widths are included, so they are not drawn too wide. Copy and paste works for them too.
+- pdf-lib gives some glyphs no width, so viewers draw them too wide. Here every glyph gets its real width. Copy and paste works for them too.
 - A full OpenType (CFF) font is embedded as OpenType. pdf-lib embeds it as TrueType.
 - Font collections (`.ttc`), WOFF files and variable OpenType (CFF2) fonts are not supported. A variable TrueType font uses its default style, like fontkit.
 
@@ -319,7 +321,26 @@ Most of these are fixes or small extras. Most pdf-lib code works without changes
 
 ## Platforms
 
-dox_pdf_lib uses Dart build hooks to get its native library. It tries these in order:
+dox_pdf_lib works in Dart programs on macOS, Linux and Windows.
+It uses `dart:ffi`, so it does not work on the web.
+Android and iOS are not supported yet.
+
+Ready-built native libraries exist for:
+
+| System | CPU |
+|---|---|
+| macOS | arm64, x64 |
+| Linux | x64, arm64 |
+| Windows | x64 |
+
+The Linux libraries need glibc. On Alpine (musl), build the library with cargo and set `lib_path` (see below).
+
+On another desktop system, install [Rust](https://rustup.rs). The library is then built from source.
+Cross builds (building on one system for another) are not supported.
+
+### How the native library is found
+
+A Dart build hook finds the library. It tries these steps in order:
 
 1. A path you set in your app's `pubspec.yaml`:
    ```yaml
@@ -328,23 +349,17 @@ dox_pdf_lib uses Dart build hooks to get its native library. It tries these in o
        dox_pdf_lib:
          lib_path: /path/to/libdox_pdf_lib.so
    ```
-2. A ready-built library from the GitHub release, checked with SHA-256.
-3. A build from source with `cargo`. This needs [Rust](https://rustup.rs).
+   Use the file name of your system: `.dylib` on macOS, `.so` on Linux, `.dll` on Windows.
+   If the file does not exist, the build fails.
+2. From pub.dev: the ready-built library from the GitHub release, checked with SHA-256.
+3. A build from source with `cargo`, when Rust is installed.
+4. A library that is already in `native/target/release`, when Rust is not installed.
+5. As a path or git dependency: the ready-built library from the GitHub release.
 
-Use the file name of your system in `lib_path`: `.dylib` on macOS, `.so` on Linux, `.dll` on Windows.
-As a path or git dependency, step 3 comes before step 2, because the source may be newer than the release.
-Step 3 only builds for the system you build on.
-If no step works, the build still passes. Every PDF call then throws an error that says the native library is missing.
+As a path or git dependency, cargo comes first, because the source may be newer than the release.
 
-Ready-built libraries exist for:
-
-| System | CPU |
-|---|---|
-| macOS | arm64, x64 |
-| Linux | x64, arm64 |
-| Windows | x64 |
-
-On other systems, install Rust and the library is built from source.
+If no step works, the build still passes.
+Every PDF call then throws an `ArgumentError` that starts with `Couldn't resolve native function`.
 
 ## Thanks
 
