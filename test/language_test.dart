@@ -90,7 +90,7 @@ const Map<String, _Lang> _langs = <String, _Lang>{
       'السعر: 1,250.50',
       'مرحبا 123',
       'Order 66 وصل 2024-05-01',
-      'Hello مرحبا world',
+      'Hello there, friend مرحبا world',
     ],
     complex: true,
     mixed: true,
@@ -384,6 +384,125 @@ void main() {
       });
     }
   }
+
+  // A wrapped line keeps the bidi direction of its paragraph. The reference
+  // draws each line alone, with a mark (LRM / RLM) that sets that
+  // direction; the pages must render the same.
+  group('bidi paragraphs', skip: ready ? false : skip, () {
+    const String font = 'IBMPlexSansArabic-Regular.ttf';
+    const double size = 16;
+
+    Future<void> same(
+      String name,
+      void Function(PDFDocument doc, PDFPage page, PDFFont f) wrapped,
+      void Function(PDFDocument doc, PDFPage page, PDFFont f) lines,
+    ) async {
+      List<String> files = <String>[];
+      for (void Function(PDFDocument, PDFPage, PDFFont) draw
+          in <void Function(PDFDocument, PDFPage, PDFFont)>[wrapped, lines]) {
+        PDFDocument doc = await PDFDocument.create();
+        PDFFont f = await doc.embedFont(testFont(font), subset: true);
+        PDFPage page = doc.addPage(<double>[400, 200]);
+        draw(doc, page, f);
+        String out = '${tmp.path}/bidi-$name-${files.length}.pdf';
+        File(out).writeAsBytesSync(await doc.save());
+        files.add(out);
+      }
+      await sameRender(files[0], files[1], 1);
+    }
+
+    /// `maxWidth` that puts `first` on line 1 and `second` on line 2.
+    double wrapAt(PDFFont f, String first, String second) {
+      double a = f.widthOfTextAtSize(first, size);
+      double b = f.widthOfTextAtSize(second, size);
+      double both = f.widthOfTextAtSize(first + second.split(' ').first, size);
+      double max = (a > b ? a : b) + 1;
+      expect(max, lessThan(both), reason: 'the test text wraps');
+      return max;
+    }
+
+    test(
+      'drawText: an English paragraph with a line that starts in Arabic',
+      () async {
+        if (!fonts) return markTestSkipped('no test fonts');
+        await same(
+          'ltr',
+          (PDFDocument d, PDFPage p, PDFFont f) => p.drawText(
+            'Hello there, friend مرحبا world',
+            x: 20,
+            y: 150,
+            size: size,
+            font: f,
+            lineHeight: 24,
+            maxWidth: wrapAt(f, 'Hello there, friend ', 'مرحبا world'),
+          ),
+          (PDFDocument d, PDFPage p, PDFFont f) => p.drawText(
+            'Hello there, friend \n\u200Eمرحبا world',
+            x: 20,
+            y: 150,
+            size: size,
+            font: f,
+            lineHeight: 24,
+          ),
+        );
+      },
+    );
+
+    test(
+      'drawText: an Arabic paragraph with a line that starts in Latin',
+      () async {
+        if (!fonts) return markTestSkipped('no test fonts');
+        await same(
+          'rtl',
+          (PDFDocument d, PDFPage p, PDFFont f) => p.drawText(
+            'السلام عليكم ورحمة Google هو',
+            x: 20,
+            y: 150,
+            size: size,
+            font: f,
+            lineHeight: 24,
+            maxWidth: wrapAt(f, 'السلام عليكم ورحمة ', 'Google هو'),
+          ),
+          (PDFDocument d, PDFPage p, PDFFont f) => p.drawText(
+            'السلام عليكم ورحمة \n\u200FGoogle هو',
+            x: 20,
+            y: 150,
+            size: size,
+            font: f,
+            lineHeight: 24,
+          ),
+        );
+      },
+    );
+
+    test('a multi-line Arabic form field', () async {
+      if (!fonts) return markTestSkipped('no test fonts');
+      void field(PDFDocument doc, PDFPage page, PDFFont f, String text) {
+        // wide enough for line 1, not for line 1 and the next word
+        double w = f.widthOfTextAtSize('السلام عليكم ورحمة', 14) + 8;
+        expect(
+          f.widthOfTextAtSize('السلام عليكم ورحمة Google', 14) + 4,
+          greaterThan(w),
+        );
+        PDFTextField t = doc.getForm().createTextField('f');
+        t.enableMultiline();
+        t.addToPage(page, x: 20, y: 60, width: w, height: 80, font: f);
+        t.setFontSize(14);
+        t.setText(text);
+        t.updateAppearances(f);
+        doc.getForm().flatten();
+      }
+
+      await same(
+        'form',
+        (PDFDocument d, PDFPage p, PDFFont f) =>
+            field(d, p, f, 'السلام عليكم ورحمة Google هو'),
+        // the mark has no width, so the field wraps at the same place
+        (PDFDocument d, PDFPage p, PDFFont f) =>
+            field(d, p, f, 'السلام عليكم ورحمة \u200FGoogle هو'),
+      );
+    });
+  });
 }
 
 bool _tool(String name) {

@@ -245,7 +245,9 @@ impl Embedded {
 
     /// The operators that show `text` (for drawText and other areas), like
     /// pdf-lib's `<hex> Tj`. See `CustomFont::show_text`.
-    pub fn show_text(&mut self, text: &str, size: f64) -> Result<Vec<u8>> {
+    /// `rtl`: the direction of the paragraph of the line
+    /// (`custom_font::paragraph_rtl`), or `None` to take it from the line.
+    pub fn show_text(&mut self, text: &str, size: f64, rtl: Option<bool>) -> Result<Vec<u8>> {
         match self {
             Embedded::Standard(_) => {
                 let mut out = vec![b'<'];
@@ -253,7 +255,7 @@ impl Embedded {
                 out.extend_from_slice(b"> Tj");
                 Ok(out)
             }
-            Embedded::Custom(c) => c.show_text(text, size),
+            Embedded::Custom(c) => c.show_text(text, size, rtl),
         }
     }
 

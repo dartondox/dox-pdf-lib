@@ -51,8 +51,9 @@ pub trait FormFont {
     fn height(&self, size: f64, descender: bool) -> f64;
     /// The operators that show the text at `size`: `<hex> Tj` like pdf-lib.
     /// A custom font places the glyphs of a complex script (see
-    /// `CustomFont::show_text`).
-    fn show(&self, text: &str, _size: f64) -> Result<Vec<u8>> {
+    /// `CustomFont::show_text`); `rtl` is the bidi direction of the
+    /// paragraph of the line, or `None` to take it from the line.
+    fn show(&self, text: &str, _size: f64, _rtl: Option<bool>) -> Result<Vec<u8>> {
         let mut out = vec![b'<'];
         out.extend(self.encode(text)?);
         out.extend_from_slice(b"> Tj");
@@ -118,8 +119,8 @@ impl FormFont for crate::custom_font::CustomFont {
         }
         (h / 1000.0) * size
     }
-    fn show(&self, text: &str, size: f64) -> Result<Vec<u8>> {
-        self.show_text(text, size)
+    fn show(&self, text: &str, size: f64, rtl: Option<bool>) -> Result<Vec<u8>> {
+        self.show_text(text, size, rtl)
     }
 }
 
@@ -965,7 +966,7 @@ fn layout_single(text: &str, alignment: i32, size: Option<f64>, f: &dyn FormFont
         Some(s) => s,
         None => compute_font_size(std::slice::from_ref(&line), f, b, false)?,
     };
-    let ops = f.show(&line, size)?;
+    let ops = f.show(&line, size, None)?;
     let width = f.width(&line, size)?;
     let height = f.height(size, false);
     let x = align_x(alignment, b, width);
@@ -1018,12 +1019,14 @@ fn layout_multi(
     let mut out = Vec::new();
     let mut y = b.y + b.h;
     for line in &lines {
+        // the wrapped lines of a paragraph keep its bidi direction
+        let rtl = crate::custom_font::paragraph_rtl(line);
         let mut rest: Option<Vec<char>> = Some(line.chars().collect());
         while let Some(input) = rest {
             let (text, width, remainder) = split_out(&input, b.w, f, size)?;
             let x = align_x(alignment, b, width);
             y -= line_height;
-            let ops = f.show(&text, size)?;
+            let ops = f.show(&text, size, rtl)?;
             out.push(Line {
                 text,
                 ops,
@@ -1083,7 +1086,7 @@ fn layout_combed(text: &str, size: Option<f64>, f: &dyn FormFont, b: Bounds, cel
         let center = b.x + (cell_width * cell as f64 + cell_width / 2.0);
         out.push(Line {
             text: all.clone(),
-            ops: f.show(&c, size)?,
+            ops: f.show(&c, size, None)?,
             x: center - width / 2.0,
             y,
             height,

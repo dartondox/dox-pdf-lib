@@ -434,24 +434,28 @@ fn break_lines(
     max_width: f64,
     f: &mut font::Embedded,
     size: f64,
-) -> Result<Vec<String>> {
+) -> Result<Vec<(String, Option<bool>)>> {
     let clean = clean_text(text);
     let chars: Vec<char> = clean.chars().collect();
     let keep = f.break_points(&clean)?;
+    // the bidi direction of each paragraph; its wrapped lines keep it
+    let mut dirs = clean.split(is_newline).map(crate::custom_font::paragraph_rtl);
+    let mut dir = dirs.next().flatten();
     let mut lines = Vec::new();
     let mut line = String::new();
     let mut width = 0.0;
     for word in words(&chars, breaks, &keep) {
         if word.chars().count() == 1 && word.chars().all(is_newline) {
             if !line.is_empty() {
-                lines.push(std::mem::take(&mut line));
+                lines.push((std::mem::take(&mut line), dir));
             }
+            dir = dirs.next().flatten();
             width = 0.0;
         } else {
             let w = f.width_of_text(&word, size)?;
             if width + w > max_width {
                 if !line.is_empty() {
-                    lines.push(std::mem::take(&mut line));
+                    lines.push((std::mem::take(&mut line), dir));
                 }
                 width = 0.0;
             }
@@ -460,7 +464,7 @@ fn break_lines(
         }
     }
     if !line.is_empty() {
-        lines.push(line);
+        lines.push((line, dir));
     }
     Ok(lines)
 }
@@ -869,8 +873,13 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
             let text_len = (a(9)? as usize).min(bytes.len());
             let text = std::str::from_utf8(&bytes[..text_len]).map_err(|_| Error::generic("text is not UTF-8"))?;
             let max_width = a(8)?;
-            let lines = if max_width.is_nan() {
-                clean_text(text).split(is_newline).map(str::to_string).collect()
+            // (line, direction of its paragraph); a line of its own is a
+            // paragraph, so it takes its direction from itself
+            let lines: Vec<(String, Option<bool>)> = if max_width.is_nan() {
+                clean_text(text)
+                    .split(is_newline)
+                    .map(|l| (l.to_string(), None))
+                    .collect()
             } else {
                 // word breaks: each one ends with a 0 byte
                 let breaks: Vec<Vec<char>> = bytes[text_len..]
@@ -884,7 +893,10 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
                     .collect();
                 break_lines(text, &breaks, max_width, f, size)?
             };
-            let shown = lines.iter().map(|l| f.show_text(l, size)).collect::<Result<Vec<_>>>()?;
+            let shown = lines
+                .iter()
+                .map(|(l, rtl)| f.show_text(l, size, *rtl))
+                .collect::<Result<Vec<_>>>()?;
             let font_name = resource(pdf, state, page, ResKey::Font(font_ref), b"Font", f.name()?, || {
                 Object::Reference(font_ref)
             })?;

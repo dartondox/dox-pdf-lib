@@ -150,6 +150,17 @@ fn is_complex(s: Script) -> bool {
     )
 }
 
+/// The direction of a paragraph (UAX #9 rules P2, P3): right to left when
+/// its first strong letter is, `None` with no strong letter. A wrapped
+/// line keeps the direction of its paragraph.
+pub fn paragraph_rtl(text: &str) -> Option<bool> {
+    match unicode_bidi::get_base_direction(text) {
+        unicode_bidi::Direction::Ltr => Some(false),
+        unicode_bidi::Direction::Rtl => Some(true),
+        unicode_bidi::Direction::Mixed => None,
+    }
+}
+
 /// A run of one direction and one script, in bytes of the text.
 #[derive(Debug, PartialEq)]
 struct Run {
@@ -167,8 +178,18 @@ fn is_weak(s: Script) -> bool {
 /// the Unicode bidi algorithm (UAX #9), so numbers and Latin words in a
 /// right-to-left text run left to right. Each direction run is split by
 /// script; spaces, digits and punctuation take the script next to them.
-fn runs(text: &str) -> Vec<Run> {
-    let info = unicode_bidi::ParagraphBidiInfo::new(text, None);
+///
+/// `rtl` is the direction of the paragraph (`paragraph_rtl`) that `text` is
+/// a line of; `None` takes it from `text`.
+fn runs(text: &str, rtl: Option<bool>) -> Vec<Run> {
+    let level = rtl.map(|r| {
+        if r {
+            unicode_bidi::Level::rtl()
+        } else {
+            unicode_bidi::Level::ltr()
+        }
+    });
+    let info = unicode_bidi::ParagraphBidiInfo::new(text, level);
     let (levels, bidi_runs) = info.visual_runs(0..text.len());
     let strong = |c: char| Some(harfrust::unicode::script(c as u32)).filter(|s| !is_weak(*s));
     let mut out = Vec::new();
@@ -580,8 +601,13 @@ impl CustomFont {
     /// harfrust as HarfBuzz does it, with positions; other text exactly like
     /// fontkit's `layout()`.
     pub fn layout(&self, text: &str) -> Result<Layout> {
+        self.layout_in(text, None)
+    }
+
+    /// `layout` of a line of a paragraph with direction `rtl` (see `runs`).
+    fn layout_in(&self, text: &str, rtl: Option<bool>) -> Result<Layout> {
         if text.chars().any(|c| is_complex(harfrust::unicode::script(c as u32))) {
-            return self.layout_complex(text);
+            return self.layout_complex(text, rtl);
         }
         Ok(Layout {
             glyphs: self.layout_simple(text)?,
@@ -622,10 +648,10 @@ impl CustomFont {
         Ok(buffer)
     }
 
-    fn layout_complex(&self, text: &str) -> Result<Layout> {
+    fn layout_complex(&self, text: &str, rtl: Option<bool>) -> Result<Layout> {
         let (mut glyphs, mut pos) = (Vec::new(), Vec::new());
         let mut spans: Vec<(usize, String)> = Vec::new();
-        for run in runs(text) {
+        for run in runs(text, rtl) {
             let buffer = self.shape_run(text, &run)?;
             let infos = buffer.glyph_infos();
             let mut starts: Vec<usize> = infos.iter().map(|g| g.cluster as usize).collect();
@@ -704,7 +730,7 @@ impl CustomFont {
     pub fn break_points(&self, text: &str) -> Result<Vec<bool>> {
         let chars: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
         let mut ok = vec![false; chars.len()];
-        for run in runs(text) {
+        for run in runs(text, None) {
             let buffer = self.shape_run(text, &run)?;
             for g in buffer.glyph_infos() {
                 if let Ok(i) = chars.binary_search(&(g.cluster as usize)) {
@@ -853,9 +879,12 @@ impl CustomFont {
     ///   and one glyph can stand for more than one letter (Arabic letters
     ///   share a dotless form), so their ToUnicode alone does not give the
     ///   text back on copy.
-    pub fn show_text(&self, text: &str, size: f64) -> Result<Vec<u8>> {
+    ///
+    /// `rtl`: the direction of the paragraph of this line (`paragraph_rtl`),
+    /// or `None` to take it from the line.
+    pub fn show_text(&self, text: &str, size: f64, rtl: Option<bool>) -> Result<Vec<u8>> {
         use std::io::Write;
-        let layout = self.layout(text)?;
+        let layout = self.layout_in(text, rtl)?;
         let mut out = Vec::new();
         let Some(pos) = &layout.pos else {
             out.push(b'<');
@@ -1323,20 +1352,20 @@ mod tests {
         // a line never breaks before a mark or sara am
         assert_eq!(f.break_points("น้ำใจ").unwrap(), [true, false, false, true, true]);
         // the text is in an ActualText span; the glyphs are placed with TJ
-        let ops = String::from_utf8(f.show_text("น้ำ", 20.0).unwrap()).unwrap();
+        let ops = String::from_utf8(f.show_text("น้ำ", 20.0, None).unwrap()).unwrap();
         assert!(
             ops.starts_with("/Span <</ActualText <FEFF0E190E490E33>>> BDC\n["),
             "{ops}"
         );
         assert!(ops.ends_with("] TJ\nEMC") || ops.ends_with("0 Ts"), "{ops}");
         // Latin text in the same font is still drawn like pdf-lib
-        assert_eq!(f.show_text("", 20.0).unwrap(), b"<> Tj");
+        assert_eq!(f.show_text("", 20.0, None).unwrap(), b"<> Tj");
     }
 
     #[test]
     fn bidi_runs_in_drawn_order() {
         let r = |t: &str| -> Vec<(String, bool)> {
-            runs(t)
+            runs(t, None)
                 .into_iter()
                 .map(|r| (t[r.start..r.end].to_string(), r.rtl))
                 .collect()
@@ -1364,8 +1393,22 @@ mod tests {
                 s("وصل ", true)
             ]
         );
+        // a wrapped line keeps the direction of its paragraph
+        let rp = |t: &str, rtl: bool| -> Vec<(String, bool)> {
+            runs(t, Some(rtl))
+                .into_iter()
+                .map(|r| (t[r.start..r.end].to_string(), r.rtl))
+                .collect()
+        };
+        assert_eq!(r("مرحبا world"), [s("world", false), s("مرحبا ", true)]);
+        assert_eq!(rp("مرحبا world", false), [s("مرحبا", true), s(" world", false)]);
+        assert_eq!(r("Google هو محرك"), [s("Google ", false), s("هو محرك", true)]);
+        assert_eq!(rp("Google هو محرك", true), [s(" هو محرك", true), s("Google", false)]);
+        assert_eq!(paragraph_rtl("123 مرحبا world"), Some(true));
+        assert_eq!(paragraph_rtl("Hello مرحبا"), Some(false));
+        assert_eq!(paragraph_rtl("123 ..."), None);
         // a digit run takes the script of the text before it
-        let rs = runs("مرحبا 123");
+        let rs = runs("مرحبا 123", None);
         assert_eq!(rs[0].script, Script::ARABIC);
     }
 
