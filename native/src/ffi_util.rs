@@ -72,9 +72,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// (eg. fonts to embed at save). Keep it `Clone`: a fast in-memory copy of
 /// a loaded document (load a template once, copy it per output) is one
 /// clone under the lock, with no parse.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Doc {
     pub pdf: Document,
+    pub draw: crate::draw::DrawState,
 }
 
 pub type Shared = Mutex<Doc>;

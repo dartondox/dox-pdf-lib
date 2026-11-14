@@ -1,0 +1,310 @@
+//! The 14 standard fonts: metrics, WinAnsi / Symbol / ZapfDingbats encoding,
+//! text width and the font dict, like pdf-lib's `StandardFontEmbedder`.
+//!
+//! The metrics come from `fonts.bin`, made from @pdf-lib/standard-fonts by
+//! `tool/crosscheck/gen_fonts.mjs`, so widths match pdf-lib exactly.
+
+use std::collections::HashMap;
+use std::ffi::c_void;
+use std::sync::OnceLock;
+
+use lopdf::{Dictionary, Object, ObjectId};
+
+use crate::document::ref_to_i64;
+use crate::ffi_util::*;
+
+static DATA: &[u8] = include_bytes!("fonts.bin");
+
+const ENCODING_NAMES: [&str; 3] = ["WinAnsi", "Symbol", "ZapfDingbats"];
+
+/// The font names, in the order of Dart's `StandardFonts`.
+pub const FONT_COUNT: usize = 14;
+
+pub struct Encoding {
+    /// unicode -> (code, glyph id)
+    map: HashMap<u32, (u8, u16)>,
+    /// sorted, like pdf-lib's `supportedCodePoints`
+    code_points: Vec<u32>,
+}
+
+pub struct Font {
+    pub name: String,
+    pub encoding: usize,
+    bbox: [f64; 4],
+    ascender: f64,
+    descender: f64,
+    widths: HashMap<u16, u16>,
+    kerns: HashMap<(u16, u16), i16>,
+}
+
+struct Data {
+    encodings: Vec<Encoding>,
+    fonts: Vec<Font>,
+}
+
+struct Reader<'a> {
+    data: &'a [u8],
+    pos: usize,
+}
+
+impl Reader<'_> {
+    fn bytes(&mut self, n: usize) -> &[u8] {
+        let b = &self.data[self.pos..self.pos + n];
+        self.pos += n;
+        b
+    }
+    fn u8(&mut self) -> u8 {
+        self.bytes(1)[0]
+    }
+    fn u16(&mut self) -> u16 {
+        u16::from_le_bytes(self.bytes(2).try_into().unwrap())
+    }
+    fn i16(&mut self) -> i16 {
+        self.u16() as i16
+    }
+    fn u32(&mut self) -> u32 {
+        u32::from_le_bytes(self.bytes(4).try_into().unwrap())
+    }
+}
+
+fn data() -> &'static Data {
+    static CELL: OnceLock<Data> = OnceLock::new();
+    CELL.get_or_init(|| {
+        let mut r = Reader { data: DATA, pos: 0 };
+        let encodings = (0..3)
+            .map(|_| {
+                let n = r.u16() as usize;
+                let mut map = HashMap::with_capacity(n);
+                let mut code_points = Vec::with_capacity(n);
+                for _ in 0..n {
+                    let cp = r.u32();
+                    let code = r.u8();
+                    map.insert(cp, (code, r.u16()));
+                    code_points.push(cp);
+                }
+                Encoding { map, code_points }
+            })
+            .collect();
+        let fonts = (0..FONT_COUNT)
+            .map(|_| {
+                let encoding = r.u8() as usize;
+                let len = r.u8() as usize;
+                let name = String::from_utf8_lossy(r.bytes(len)).into_owned();
+                let bbox = [r.i16(), r.i16(), r.i16(), r.i16()].map(f64::from);
+                let ascender = r.i16() as f64;
+                let descender = r.i16() as f64;
+                let widths = (0..r.u16()).map(|_| (r.u16(), r.u16())).collect();
+                let kerns = (0..r.u16()).map(|_| ((r.u16(), r.u16()), r.i16())).collect();
+                Font {
+                    name,
+                    encoding,
+                    bbox,
+                    ascender,
+                    descender,
+                    widths,
+                    kerns,
+                }
+            })
+            .collect();
+        Data { encodings, fonts }
+    })
+}
+
+pub fn font(id: i32) -> Result<&'static Font> {
+    usize::try_from(id)
+        .ok()
+        .and_then(|i| data().fonts.get(i))
+        .ok_or_else(|| Error::generic(format!("unknown standard font {id}")))
+}
+
+impl Font {
+    fn encoding(&self) -> &'static Encoding {
+        &data().encodings[self.encoding]
+    }
+
+    /// pdf-lib's `encodeTextAsGlyphs`: (code, glyph id) per code point.
+    pub fn glyphs(&self, text: &str) -> Result<Vec<(u8, u16)>> {
+        let enc = self.encoding();
+        text.chars()
+            .map(|c| {
+                enc.map.get(&(c as u32)).copied().ok_or_else(|| {
+                    Error::generic(format!(
+                        "{} cannot encode \"{c}\" (0x{:04x})",
+                        ENCODING_NAMES[self.encoding], c as u32
+                    ))
+                })
+            })
+            .collect()
+    }
+
+    /// pdf-lib's `widthOfTextAtSize`, with kerning. The same float steps,
+    /// so the result is the same to the last bit.
+    pub fn width_of_glyphs(&self, glyphs: &[(u8, u16)], size: f64) -> f64 {
+        let mut total = 0.0;
+        for (i, (_, g)) in glyphs.iter().enumerate() {
+            let kern = glyphs
+                .get(i + 1)
+                .and_then(|(_, next)| self.kerns.get(&(*g, *next)))
+                .copied()
+                .unwrap_or(0);
+            // a missing or 0 width counts as 250, like pdf-lib (`|| 250`)
+            let width = match self.widths.get(g) {
+                Some(&w) if w != 0 => w,
+                _ => 250,
+            };
+            total += width as f64 + kern as f64;
+        }
+        total * (size / 1000.0)
+    }
+
+    pub fn width_of_text(&self, text: &str, size: f64) -> Result<f64> {
+        Ok(self.width_of_glyphs(&self.glyphs(text)?, size))
+    }
+
+    /// `[top, bottom, descender]` as pdf-lib's height math uses them.
+    pub fn vertical(&self) -> [f64; 3] {
+        let top = if self.ascender != 0.0 {
+            self.ascender
+        } else {
+            self.bbox[3]
+        };
+        let bottom = if self.descender != 0.0 {
+            self.descender
+        } else {
+            self.bbox[1]
+        };
+        [top, bottom, self.descender]
+    }
+
+    pub fn code_points(&self) -> &'static [u32] {
+        &self.encoding().code_points
+    }
+}
+
+/// The font dict, like `StandardFontEmbedder.embedIntoContext`.
+pub fn embed(pdf: &mut lopdf::Document, id: i32, custom_name: Option<&[u8]>) -> Result<ObjectId> {
+    let f = font(id)?;
+    let mut dict = Dictionary::new();
+    dict.set("Type", Object::Name(b"Font".to_vec()));
+    dict.set("Subtype", Object::Name(b"Type1".to_vec()));
+    let base = custom_name.filter(|n| !n.is_empty()).unwrap_or(f.name.as_bytes());
+    dict.set("BaseFont", Object::Name(base.to_vec()));
+    if f.encoding == 0 {
+        dict.set("Encoding", Object::Name(b"WinAnsiEncoding".to_vec()));
+    }
+    Ok(pdf.add_object(Object::Dictionary(dict)))
+}
+
+fn text_arg<'a>(ptr: *const u8, len: i64) -> Result<&'a str> {
+    std::str::from_utf8(slice(ptr, len)?).map_err(|_| Error::generic("text is not UTF-8"))
+}
+
+// ---------------------------------------------------------------- exports
+
+/// Embeds standard font `font` (with an optional custom `BaseFont`).
+/// `out[0]` = the font ref.
+#[unsafe(no_mangle)]
+pub extern "C" fn dox_pdf_embed_standard_font(
+    handle: *const c_void,
+    font: i32,
+    name: *const u8,
+    name_len: i64,
+    out: *mut i64,
+) -> i32 {
+    call(|| {
+        let custom = slice(name, name_len)?;
+        with_doc(handle, |d| {
+            let id = embed(&mut d.pdf, font, Some(custom))?;
+            d.draw.fonts.insert(id, font);
+            write_out(out, ref_to_i64(id));
+            Ok(OK)
+        })
+    })
+}
+
+/// `out[0]` = the width of `text` at `size`.
+#[unsafe(no_mangle)]
+pub extern "C" fn dox_pdf_font_width(font: i32, text: *const u8, len: i64, size: f64, out: *mut f64) -> i32 {
+    call(|| {
+        let w = self::font(font)?.width_of_text(text_arg(text, len)?, size)?;
+        // SAFETY: Dart passes room for one double.
+        unsafe { *out = w };
+        Ok(OK)
+    })
+}
+
+/// `out` = top, bottom, descender (see `Font::vertical`).
+#[unsafe(no_mangle)]
+pub extern "C" fn dox_pdf_font_vertical(font: i32, out: *mut f64) -> i32 {
+    call(|| {
+        let v = self::font(font)?.vertical();
+        for (i, x) in v.iter().enumerate() {
+            // SAFETY: Dart passes room for 3 doubles.
+            unsafe { *out.add(i) = *x };
+        }
+        Ok(OK)
+    })
+}
+
+/// The supported code points into `out` (room for `cap`). `count[0]` = how
+/// many there are; when more than `cap`, Dart calls again with more room.
+#[unsafe(no_mangle)]
+pub extern "C" fn dox_pdf_font_charset(font: i32, out: *mut i64, cap: i64, count: *mut i64) -> i32 {
+    call(|| {
+        let cps = self::font(font)?.code_points();
+        write_out(count, cps.len() as i64);
+        if cps.len() as i64 <= cap && !out.is_null() {
+            for (i, cp) in cps.iter().enumerate() {
+                // SAFETY: Dart passes room for `cap` values.
+                unsafe { *out.add(i) = *cp as i64 };
+            }
+        }
+        Ok(OK)
+    })
+}
+
+/// `out[0]` = a `Bytes` address of the hex codes of `text` (pdf-lib's
+/// `encodeText`, without the `<>`).
+#[unsafe(no_mangle)]
+pub extern "C" fn dox_pdf_font_encode(font: i32, text: *const u8, len: i64, out: *mut i64) -> i32 {
+    call(|| {
+        let glyphs = self::font(font)?.glyphs(text_arg(text, len)?)?;
+        let mut hex = Vec::with_capacity(glyphs.len() * 2);
+        for (code, _) in glyphs {
+            hex.extend_from_slice(format!("{code:02X}").as_bytes());
+        }
+        write_out(out, bytes_into_raw(hex));
+        Ok(OK)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HELVETICA: i32 = 4;
+
+    #[test]
+    fn widths_match_pdf_lib() {
+        let f = font(HELVETICA).unwrap();
+        assert_eq!(f.name, "Helvetica");
+        // values from pdf-lib 1.17.1
+        assert_eq!(f.width_of_text("Hello", 24.0).unwrap(), 54.672000000000004);
+        // "AV" has a kern pair (-70)
+        assert_eq!(f.width_of_text("AV", 1000.0).unwrap(), 667.0 + 667.0 - 70.0);
+        assert_eq!(font(0).unwrap().width_of_text("abc", 10.0).unwrap(), 18.0);
+    }
+
+    #[test]
+    fn unencodable_char_is_an_error() {
+        let e = font(HELVETICA).unwrap().glyphs("a\u{4e16}").unwrap_err();
+        assert_eq!(e.message, "WinAnsi cannot encode \"\u{4e16}\" (0x4e16)");
+    }
+
+    #[test]
+    fn vertical_metrics() {
+        assert_eq!(font(HELVETICA).unwrap().vertical(), [718.0, -207.0, -207.0]);
+        // Symbol has no ascender: the bbox is used
+        assert_eq!(font(12).unwrap().vertical(), [1010.0, -293.0, 0.0]);
+    }
+}

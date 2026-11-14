@@ -2,6 +2,9 @@
 //! is one new line here. See CONTRIBUTING.md, "Native layout".
 
 mod document;
+mod draw;
 mod ffi_util;
+mod font;
+mod image;
 mod metadata;
 mod page;

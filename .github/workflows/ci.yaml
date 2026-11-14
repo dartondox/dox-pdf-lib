@@ -61,10 +61,14 @@ jobs:
       - name: Install pdf-lib for the crosscheck
         working-directory: tool/crosscheck
         run: npm ci
+      # pdftoppm renders pages for the drawing crosscheck
+      - name: Install poppler-utils
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
       # the crosscheck must run here, not be skipped
       - name: Dart tests
         run: |
           test -d tool/crosscheck/node_modules/pdf-lib
+          command -v pdftoppm
           dart test --concurrency=4
 
   # every PR builds the 5 targets too, so a Windows break shows before a release

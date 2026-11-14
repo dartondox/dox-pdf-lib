@@ -393,7 +393,10 @@ pub fn create(update_metadata: bool, now: &[u8]) -> Doc {
     if update_metadata {
         metadata::update_info(&mut pdf, now);
     }
-    Doc { pdf }
+    Doc {
+        pdf,
+        ..Default::default()
+    }
 }
 
 /// Load flags from Dart.
@@ -429,7 +432,10 @@ pub fn load(bytes: &[u8], flags: i32, now: &[u8]) -> Result<Doc> {
     if flags & LOAD_UPDATE_METADATA != 0 {
         metadata::update_info(&mut pdf, now);
     }
-    Ok(Doc { pdf })
+    Ok(Doc {
+        pdf,
+        ..Default::default()
+    })
 }
 
 /// The root page node has kids or a `/Count` above 0. A load that finds no
@@ -470,7 +476,9 @@ pub fn prepare_save(doc: &mut Doc, flags: i32) -> Result<Document> {
     // The copy is made here, on the caller's thread, so the file has the
     // document as it was when save was called. Measured on an 11 MB file
     // with 200 pages: copy 2.4 ms, write 2.8 ms.
-    Ok(doc.pdf.clone())
+    let mut pdf = doc.pdf.clone();
+    crate::draw::flate_streams(&doc.draw, &mut pdf)?;
+    Ok(pdf)
 }
 
 /// Writes the file, without the lock.

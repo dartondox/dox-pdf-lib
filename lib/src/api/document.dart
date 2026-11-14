@@ -1,16 +1,25 @@
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../ffi/document_bindings.dart';
+import '../ffi/draw_bindings.dart';
 import '../ffi/ffi_util.dart';
+import '../ffi/font_bindings.dart';
+import '../ffi/image_bindings.dart';
 import '../ffi/metadata_bindings.dart';
 import '../ffi/page_bindings.dart';
+import 'colors.dart';
 import 'errors.dart';
+import 'operators.dart' show LineCapStyle, PDFHexString, PDFOperator;
 import 'rotations.dart';
 import 'sizes.dart';
 
 // One part per feature area, so a new area is one new line here.
+part 'draw.dart';
+part 'font.dart';
+part 'image.dart';
 part 'metadata.dart';
 part 'page.dart';
 
