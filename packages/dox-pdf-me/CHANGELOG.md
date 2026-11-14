@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.2
 
 - **Breaking: a typed API.** Each schema type has its own class with
   typed fields and the pdfme defaults: `TextSchema`, `BarcodeSchema` (with
