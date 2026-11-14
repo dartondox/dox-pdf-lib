@@ -71,6 +71,10 @@ jobs:
           cargo test --release
       - name: Resolve the workspace
         run: dart pub get
+      # THIRD_PARTY_NOTICES must list the crates of native/Cargo.lock
+      - name: Check the third party notices
+        working-directory: packages/dox-pdf-lib
+        run: dart run tool/third_party_notices.dart --check
       - name: Install pdf-lib for the crosscheck
         working-directory: packages/dox-pdf-lib/tool/crosscheck
         run: npm ci

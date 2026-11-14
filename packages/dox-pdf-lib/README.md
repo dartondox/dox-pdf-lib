@@ -377,7 +377,9 @@ Every PDF call then throws an `ArgumentError` that starts with `Couldn't resolve
 ## Thanks
 
 The API comes from [pdf-lib](https://github.com/Hopding/pdf-lib) by Andrew Dillon.
-The native core uses [lopdf](https://crates.io/crates/lopdf), [harfrust](https://crates.io/crates/harfrust), [read-fonts](https://crates.io/crates/read-fonts), [subsetter](https://crates.io/crates/subsetter), [png](https://crates.io/crates/png), [flate2](https://crates.io/crates/flate2), [unicode-bidi](https://crates.io/crates/unicode-bidi) and [icu_segmenter](https://crates.io/crates/icu_segmenter) (its word lists of Thai, Lao, Khmer and Myanmar). The word break rules are a port of the ICU4C dictionary break engines (Unicode License).
+The native core uses [lopdf](https://crates.io/crates/lopdf), [harfrust](https://crates.io/crates/harfrust), [read-fonts](https://crates.io/crates/read-fonts), [subsetter](https://crates.io/crates/subsetter), [png](https://crates.io/crates/png), [flate2](https://crates.io/crates/flate2), [unicode-bidi](https://crates.io/crates/unicode-bidi) and [icu_segmenter](https://crates.io/crates/icu_segmenter) (its word lists of Thai, Lao, Khmer and Myanmar). The word break rules are a port of the ICU4C dictionary break engines (Unicode License V3).
+
+The native library contains code and data of these and other Rust crates. Their licenses and copyright notices are in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). It is also attached to each GitHub release, next to the libraries.
 
 ## License
 

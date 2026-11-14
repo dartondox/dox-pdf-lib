@@ -17,8 +17,8 @@
 //! and Japanese dictionary and the LSTM models are not.
 //!
 //! The engine code follows ICU4C `dictbe.cpp`: Copyright (C) 2016 and later
-//! Unicode, Inc. and others, Unicode License V3
-//! (https://www.unicode.org/license.txt).
+//! Unicode, Inc. and others, Unicode License V3. The full license text is in
+//! THIRD_PARTY_NOTICES (packages/dox-pdf-lib/THIRD_PARTY_NOTICES).
 
 use std::sync::OnceLock;
 

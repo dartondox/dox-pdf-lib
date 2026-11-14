@@ -22,6 +22,7 @@ Send changes as pull requests against `main`. Before you ask for review:
 - `dart analyze --fatal-infos` has no warnings (run it at the root).
 - Add a changelog entry under `## Unreleased` in the `CHANGELOG.md` of the package.
 - Do not change versions in the PR.
+- After a change of `packages/dox-pdf-lib/native/Cargo.toml` or `Cargo.lock`, run `dart run tool/third_party_notices.dart` in `packages/dox-pdf-lib` (CI checks `THIRD_PARTY_NOTICES`).
 
 ## Releases
 
