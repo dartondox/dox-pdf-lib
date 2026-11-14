@@ -287,6 +287,10 @@ dox_pdf_me runs where dox_pdf_lib runs: Dart programs on macOS, Linux and
 Windows. It does not work on the web. Android and iOS are not supported yet.
 See the [dox_pdf_lib platforms](https://pub.dev/packages/dox_pdf_lib#platforms).
 
+Need iOS or Android? Give a 👍 on [issue #18 (iOS)](https://github.com/dartondox/dox-pdf-lib/issues/18)
+or [issue #19 (Android)](https://github.com/dartondox/dox-pdf-lib/issues/19). When an
+issue has requests from 50 users, we add support for that platform.
+
 ## Thanks and licenses
 
 The behavior comes from [pdfme](https://github.com/pdfme/pdfme) (MIT) by
