@@ -19,4 +19,4 @@
   - `getForm`, `PDFForm` (`getFields`, `getField`, `getTextField` and the other getters, `create...` for every field type, `removeField`, `flatten`, `updateFieldAppearances`, `getDefaultFont`, XFA).
   - `PDFTextField`, `PDFCheckBox`, `PDFRadioGroup`, `PDFDropdown`, `PDFOptionList`, `PDFButton`, `PDFSignature` with the pdf-lib methods and flags, and `addToPage`.
   - Appearance streams like pdf-lib's default providers. `save` updates them.
-- Custom fonts, like pdf-lib with @pdf-lib/fontkit: `embedFont` with TrueType and OpenType (CFF) files, `subset`, `customName` and `features`. Text layout and metrics match fontkit (checked against pdf-lib in `test/font_crosscheck_test.dart`). No `registerFontkit` is needed.
+- Custom fonts, like pdf-lib with @pdf-lib/fontkit: `embedFont` with TrueType and OpenType (CFF) files, `subset`, `customName` and `features`. Text layout and metrics match fontkit (checked against pdf-lib in `test/font_crosscheck_test.dart`). No `registerFontkit` is needed. Complex scripts (Thai, Myanmar, Khmer, Arabic, Hindi, ...) are laid out and placed like HarfBuzz, with `/ActualText` for copy and paste. Custom fonts also work in form fields.

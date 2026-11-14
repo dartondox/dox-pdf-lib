@@ -88,7 +88,14 @@ double width = font.widthOfTextAtSize('日本語', 20);
 `embedFont` takes TrueType and OpenType (CFF) files, like pdf-lib with fontkit, with the options `subset`, `customName` and `features` (eg. `{'liga': false}`).
 The font code is built in, so there is no `registerFontkit`.
 Text layout (ligatures and the other default OpenType features) and all metrics are the same as fontkit, so `widthOfTextAtSize` and `heightAtSize` give the same numbers as pdf-lib.
+Complex scripts (Thai, Lao, Myanmar, Khmer, Indic, Arabic, Hebrew and others) are laid out and drawn as HarfBuzz does it; see below.
 The font is read once; a subset is made when you save. A subset of a big CJK font (16 MB, 200 characters) takes about 25 ms.
+
+Use `subset: true` for big fonts, eg. CJK fonts. Without it, the whole font goes into the file: a 16 MB font makes a 14 MB PDF, and the first save takes about 0.4 s to compress it.
+
+Custom fonts work in form fields too: `form.updateFieldAppearances(font)`, `field.updateAppearances(font)` and `addToPage(page, font: font)`.
+
+Tested languages, with full and subset fonts (`test/language_test.dart`): English, German, Vietnamese, Japanese, Chinese, Korean, Thai, Myanmar, Khmer, Arabic and Hindi. Copy and paste (`pdftotext`) gives the text back in all of them.
 
 Differences from pdf-lib:
 
@@ -96,7 +103,9 @@ Differences from pdf-lib:
 - The widths (`/W`) of a full font also have the glyphs that layout makes but the cmap has not (eg. some ligatures and alternate digits). The widths of a subset also have `.notdef`. pdf-lib leaves them out, so viewers draw these glyphs 1000 units wide.
 - The ToUnicode CMap of a full font also has these glyphs, so copy and paste works for them.
 - The `BaseFont` name is `<PostScript name>-<n>`; pdf-lib adds a random number.
-- Text layout uses harfrust (HarfBuzz in Rust). It gives the same glyphs as fontkit for normal text. Complex scripts (eg. Arabic, Indic) may differ in rare cases, where HarfBuzz is more correct.
+- Text layout uses harfrust (HarfBuzz in Rust). It gives the same glyphs as fontkit for normal text.
+- Complex scripts are laid out like HarfBuzz (`hb-shape`), not like fontkit. fontkit can not lay out some of them right (eg. Thai, Myanmar) or at all (Khmer). Their widths are HarfBuzz's advances, and `drawText` places each glyph where HarfBuzz puts it (`TJ`, `Ts`), so marks sit in the right place. Their text is in `/ActualText` spans, so copy and paste gives the text.
+- With `wordBreaks: ['']`, a line never breaks between a letter and its marks. pdf-lib breaks between any two characters.
 - Font collections (`.ttc`), WOFF and CFF2 (variable OpenType) fonts are not supported. A variable TrueType font uses its default instance, like fontkit.
 
 ### Forms
@@ -123,7 +132,6 @@ Text fields, check boxes, radio groups, dropdowns, option lists, buttons and sig
 - Dropdown and option list options with an export value and a display text (`/Opt [[(CA) (Canada)]]`): `select` takes the display text or the export value, writes the export value to `/V`, and `getSelected` returns the display text. pdf-lib writes the display text to `/V` and returns `/V` as it is.
 - A combed text field with more than 1000 cells (`/MaxLen`) is drawn as one normal line.
 - `getForm()` removes XFA data like pdf-lib, but prints no warning.
-- Appearances use the standard fonts for now. Custom font files come later.
 
 ## Status
 

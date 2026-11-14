@@ -140,6 +140,46 @@ const Map<String, (String, String)> testFonts = <String, (String, String)>{
         'Sans/SubsetOTF/JP/NotoSansJP-Regular.otf',
     'dff723ba59d57d136764a04b9b2d03205544f7cd785a711442d6d2d085ac5073',
   ),
+  'NotoSans-Regular.ttf': (
+    'https://raw.githubusercontent.com/notofonts/notofonts.github.io/'
+        '1daf901bd023a3811498e0b7e7284694ae06307e/fonts/NotoSans/unhinted/ttf/NotoSans-Regular.ttf',
+    'f3961a9cde016d41a4879aecda1474d3a36d6bf54fa0e4643de029cc2248b0e8',
+  ),
+  'NotoSansThai-Regular.ttf': (
+    'https://raw.githubusercontent.com/notofonts/notofonts.github.io/'
+        '1daf901bd023a3811498e0b7e7284694ae06307e/fonts/NotoSansThai/unhinted/ttf/NotoSansThai-Regular.ttf',
+    'd4303fe9c63ebb72759ca8b6d2040c8ae81689f7d08d7b91c656154382b49313',
+  ),
+  'NotoSansMyanmar-Regular.ttf': (
+    'https://raw.githubusercontent.com/notofonts/notofonts.github.io/'
+        '1daf901bd023a3811498e0b7e7284694ae06307e/fonts/NotoSansMyanmar/unhinted/ttf/NotoSansMyanmar-Regular.ttf',
+    'f4be6ef43871516d8347c5217a2033991b8ecda2dd1200007c2fb431a66d64db',
+  ),
+  'NotoSansKhmer-Regular.ttf': (
+    'https://raw.githubusercontent.com/notofonts/notofonts.github.io/'
+        '1daf901bd023a3811498e0b7e7284694ae06307e/fonts/NotoSansKhmer/unhinted/ttf/NotoSansKhmer-Regular.ttf',
+    '60c10dbfae33a44f1897cd939789bd173aedb7c7dc0a9af389a737e33cb7e548',
+  ),
+  'NotoSansArabic-Regular.ttf': (
+    'https://raw.githubusercontent.com/notofonts/notofonts.github.io/'
+        '1daf901bd023a3811498e0b7e7284694ae06307e/fonts/NotoSansArabic/unhinted/ttf/NotoSansArabic-Regular.ttf',
+    'bd86ca02f087d7f3c3788ba458fb6b73744c7639ed276b8d870dba6def6c40d0',
+  ),
+  'NotoSansDevanagari-Regular.ttf': (
+    'https://raw.githubusercontent.com/notofonts/notofonts.github.io/'
+        '1daf901bd023a3811498e0b7e7284694ae06307e/fonts/NotoSansDevanagari/unhinted/ttf/NotoSansDevanagari-Regular.ttf',
+    '9c7d935139ea6a1e6ad9dbac4f6d27ece1e04bca8123c8888d00a0f9df4724cd',
+  ),
+  'NotoSansSC-Regular.otf': (
+    'https://raw.githubusercontent.com/notofonts/noto-cjk/'
+        'f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf',
+    'faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9',
+  ),
+  'NotoSansKR-Regular.otf': (
+    'https://raw.githubusercontent.com/notofonts/noto-cjk/'
+        'f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf',
+    '69975a0ac8472717870aefeab0a4d52739308d90856b9955313b2ad5e0148d68',
+  ),
 };
 
 const String testFontDir = '.dart_tool/test_fonts';

@@ -54,18 +54,35 @@ pub struct FontFile {
 }
 
 /// An embedded custom font of one document.
-#[derive(Clone)]
 pub struct CustomFont {
     pub file: Arc<FontFile>,
     subset: bool,
     base_name: String,
     features: Arc<Vec<Feature>>,
     plans: Plans,
+    /// Behind a lock, so a font handle of another area (eg. a form field,
+    /// see `share`) adds its glyphs to this font.
+    glyphs: Arc<Mutex<Glyphs>>,
+}
+
+#[derive(Clone, Default)]
+struct Glyphs {
     /// fontkit keeps one `Glyph` object per glyph id, with the code points
     /// of the first use. The ToUnicode CMap uses them, so we keep the same.
     code_points: HashMap<u16, Vec<u32>>,
     /// Subset: the glyphs in the order of first use. 0 is `.notdef`.
     remapper: subsetter::GlyphRemapper,
+}
+
+/// A copy of the document has its own glyphs.
+impl Clone for CustomFont {
+    fn clone(&self) -> Self {
+        let glyphs = self.glyphs.lock().map(|g| g.clone()).unwrap_or_default();
+        CustomFont {
+            glyphs: Arc::new(Mutex::new(glyphs)),
+            ..self.share()
+        }
+    }
 }
 
 /// From DerivedCoreProperties.txt, minus U+115F, U+1160, U+3164 and U+FFA0,
@@ -138,6 +155,8 @@ fn is_complex(s: Script) -> bool {
 pub struct Layout {
     pub glyphs: Vec<u16>,
     pub pos: Option<Vec<[i32; 3]>>,
+    /// Right to left: `(glyph count, text)` per cluster, in drawn order.
+    pub spans: Option<Vec<(usize, String)>>,
 }
 
 fn bad(e: impl std::fmt::Display) -> Error {
@@ -380,19 +399,35 @@ impl CustomFont {
             base_name,
             features: Arc::new(features),
             plans: Arc::default(),
-            code_points: HashMap::new(),
-            remapper: subsetter::GlyphRemapper::new(),
+            glyphs: Arc::default(),
         }
     }
 
+    /// The same font, with the same glyphs (not a copy of them).
+    pub fn share(&self) -> CustomFont {
+        CustomFont {
+            file: self.file.clone(),
+            subset: self.subset,
+            base_name: self.base_name.clone(),
+            features: self.features.clone(),
+            plans: self.plans.clone(),
+            glyphs: self.glyphs.clone(),
+        }
+    }
+
+    fn state(&self) -> std::sync::MutexGuard<'_, Glyphs> {
+        // a panic under the lock leaves the glyphs as they were: still fine
+        self.glyphs.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// fontkit's `getGlyph(id, codePoints)`: the first code points win.
-    fn get_glyph(&mut self, gid: u16, cps: Vec<u32>) -> u16 {
-        self.code_points.entry(gid).or_insert(cps);
+    fn get_glyph(&self, gid: u16, cps: Vec<u32>) -> u16 {
+        self.state().code_points.entry(gid).or_insert(cps);
         gid
     }
 
     fn first_code_point(&self, gid: u16) -> Option<u32> {
-        self.code_points.get(&gid).and_then(|c| c.first().copied())
+        self.state().code_points.get(&gid).and_then(|c| c.first().copied())
     }
 
     /// harfrust's glyphs and clusters (byte offsets), in logical order.
@@ -439,13 +474,14 @@ impl CustomFont {
     /// The glyphs of `text`. Text of a complex script is laid out by
     /// harfrust as HarfBuzz does it, with positions; other text exactly like
     /// fontkit's `layout()`.
-    pub fn layout(&mut self, text: &str) -> Result<Layout> {
+    pub fn layout(&self, text: &str) -> Result<Layout> {
         if text.chars().any(|c| is_complex(harfrust::unicode::script(c as u32))) {
             return self.layout_complex(text);
         }
         Ok(Layout {
             glyphs: self.layout_simple(text)?,
             pos: None,
+            spans: None,
         })
     }
 
@@ -498,8 +534,9 @@ impl CustomFont {
         runs
     }
 
-    fn layout_complex(&mut self, text: &str) -> Result<Layout> {
-        let mut parts: Vec<(Vec<u16>, Vec<[i32; 3]>)> = Vec::new();
+    fn layout_complex(&self, text: &str) -> Result<Layout> {
+        // one layout per run
+        let mut parts: Vec<Layout> = Vec::new();
         let mut base_rtl = None;
         for (start, end, script) in Self::runs(text) {
             let (buffer, rtl) = self.shape_run(text, start, end, script)?;
@@ -510,10 +547,17 @@ impl CustomFont {
             starts.dedup();
             let mut seen = std::collections::HashSet::new();
             let mut glyphs = Vec::with_capacity(infos.len());
-            for g in infos {
+            // the first glyph of a cluster gets the text of the cluster, in
+            // text order: right to left, the base glyph is drawn after its
+            // marks
+            let order: Vec<usize> = if rtl {
+                (0..infos.len()).rev().collect()
+            } else {
+                (0..infos.len()).collect()
+            };
+            for i in order {
+                let g = &infos[i];
                 let cluster = g.cluster as usize;
-                // the first glyph of a cluster (in the order it is drawn)
-                // gets the text of the cluster
                 let cps = if seen.insert(cluster) {
                     let to = starts
                         .get(starts.partition_point(|s| *s <= cluster))
@@ -525,23 +569,53 @@ impl CustomFont {
                 };
                 glyphs.push(self.get_glyph(g.glyph_id as u16, cps));
             }
+            if rtl {
+                glyphs.reverse();
+            }
             let pos = buffer
                 .glyph_positions()
                 .iter()
                 .map(|p| [p.x_advance, p.x_offset, p.y_offset])
                 .collect();
-            parts.push((glyphs, pos));
+            // the clusters in drawn order, with their text
+            let mut spans: Vec<(usize, String)> = Vec::new();
+            let mut last = usize::MAX;
+            for g in infos {
+                let cluster = g.cluster as usize;
+                if cluster == last {
+                    if let Some(s) = spans.last_mut() {
+                        s.0 += 1;
+                    }
+                    continue;
+                }
+                last = cluster;
+                let to = starts
+                    .get(starts.partition_point(|s| *s <= cluster))
+                    .copied()
+                    .unwrap_or(end);
+                spans.push((1, text[cluster..to].to_string()));
+            }
+            parts.push(Layout {
+                glyphs,
+                pos: Some(pos),
+                spans: Some(spans),
+            });
         }
         // a right-to-left text: the runs from right to left too
         if base_rtl == Some(true) {
             parts.reverse();
         }
-        let (glyphs, pos) = parts.into_iter().fold((Vec::new(), Vec::new()), |mut acc, p| {
-            acc.0.extend(p.0);
-            acc.1.extend(p.1);
-            acc
-        });
-        Ok(Layout { glyphs, pos: Some(pos) })
+        let (mut glyphs, mut pos, mut spans) = (Vec::new(), Vec::new(), Vec::new());
+        for p in parts {
+            glyphs.extend(p.glyphs);
+            pos.extend(p.pos.unwrap_or_default());
+            spans.extend(p.spans.unwrap_or_default());
+        }
+        Ok(Layout {
+            glyphs,
+            pos: Some(pos),
+            spans: (base_rtl == Some(true)).then_some(spans),
+        })
     }
 
     /// Where a line may break inside `text` without splitting a cluster
@@ -561,7 +635,7 @@ impl CustomFont {
     }
 
     /// fontkit's `font.layout(text, features).glyphs`, as glyph ids.
-    fn layout_simple(&mut self, text: &str) -> Result<Vec<u16>> {
+    fn layout_simple(&self, text: &str) -> Result<Vec<u16>> {
         // glyphsForString: one glyph per code point; a variation selector
         // goes with the code point before it
         let chars: Vec<(usize, u32)> = text.char_indices().map(|(i, c)| (i, c as u32)).collect();
@@ -585,7 +659,7 @@ impl CustomFont {
                 (self.file.glyph(c), vec![c])
             };
             let gid = self.get_glyph(gid, cps);
-            let cps = self.code_points[&gid].clone();
+            let cps = self.state().code_points[&gid].clone();
             base_of.push(Some(base.len()));
             base.push((gid, cps));
         }
@@ -653,7 +727,7 @@ impl CustomFont {
 
     /// pdf-lib's `widthOfTextAtSize`: the sum of the advance widths. For a
     /// complex script, HarfBuzz's advances (with kerning), as drawn.
-    pub fn width_of_text(&mut self, text: &str, size: f64) -> Result<f64> {
+    pub fn width_of_text(&self, text: &str, size: f64) -> Result<f64> {
         let layout = self.layout(text)?;
         let scale = self.file.scale();
         let mut total = 0.0;
@@ -673,12 +747,12 @@ impl CustomFont {
     }
 
     /// The id of glyph `g` in the file (the subset id of a subset font).
-    fn file_id(&mut self, g: u16) -> u16 {
-        if self.subset { self.remapper.remap(g) } else { g }
+    fn file_id(&self, g: u16) -> u16 {
+        if self.subset { self.state().remapper.remap(g) } else { g }
     }
 
     /// pdf-lib's `encodeText`: 4 hex digits per glyph.
-    pub fn encode(&mut self, text: &str) -> Result<Vec<u8>> {
+    pub fn encode(&self, text: &str) -> Result<Vec<u8>> {
         let glyphs = self.layout(text)?.glyphs;
         let mut hex = Vec::with_capacity(glyphs.len() * 4);
         for g in glyphs {
@@ -693,98 +767,138 @@ impl CustomFont {
     /// - the glyphs are placed where HarfBuzz puts them (`TJ` moves and
     ///   `Ts` rise); pdf-lib draws them with their plain widths, so marks
     ///   sit in the wrong place;
-    /// - when the ToUnicode text of the glyphs is not the text (eg. a
-    ///   vowel drawn before its consonant), the text is in an
-    ///   `/ActualText` span, so copy and paste gives the text.
-    pub fn show_text(&mut self, text: &str, size: f64) -> Result<Vec<u8>> {
+    /// - the text is in `/ActualText` spans: the glyphs are not in text
+    ///   order (eg. a vowel drawn before its consonant), marks are moved,
+    ///   and one glyph can stand for more than one letter (Arabic letters
+    ///   share a dotless form), so their ToUnicode alone does not give the
+    ///   text back on copy.
+    pub fn show_text(&self, text: &str, size: f64) -> Result<Vec<u8>> {
         use std::io::Write;
         let layout = self.layout(text)?;
         let mut out = Vec::new();
-        let Some(pos) = layout.pos else {
+        let Some(pos) = &layout.pos else {
             out.push(b'<');
-            for g in layout.glyphs {
+            for &g in &layout.glyphs {
                 let id = self.file_id(g);
                 let _ = write!(out, "{id:04X}");
             }
             out.extend_from_slice(b"> Tj");
             return Ok(out);
         };
-        let copied: Vec<u32> = layout
-            .glyphs
-            .iter()
-            .filter(|g| !(self.subset && **g == 0))
-            .flat_map(|g| self.code_points.get(g).cloned().unwrap_or_default())
-            .collect();
-        let actual = copied != text.chars().map(|c| c as u32).collect::<Vec<_>>();
-        if actual {
+        let mut rise = 0.0;
+        // left to right: one span for the line. Right to left: one span per
+        // cluster; viewers read spans in drawn order and turn the line around
+        let spans = match &layout.spans {
+            Some(spans) => spans.clone(),
+            None => vec![(layout.glyphs.len(), text.to_string())],
+        };
+        let mut at = 0;
+        for (n, span) in spans {
             out.extend_from_slice(b"/Span <</ActualText <FEFF");
-            for u in text.encode_utf16() {
+            for u in span.encode_utf16() {
                 let _ = write!(out, "{u:04X}");
             }
             out.extend_from_slice(b">>> BDC\n");
-        }
-        let k = 1000.0 / self.file.upem;
-        let mut rise = 0.0;
-        let mut i = 0;
-        while i < layout.glyphs.len() {
-            let dy = pos[i][2] as f64 * size / self.file.upem;
-            if dy != rise {
-                crate::draw::write_num(&mut out, dy);
-                out.extend_from_slice(b" Ts\n");
-                rise = dy;
-            }
-            out.push(b'[');
-            while i < layout.glyphs.len() && pos[i][2] as f64 * size / self.file.upem == rise {
-                let g = layout.glyphs[i];
-                let [advance, dx, _] = pos[i];
-                let (a, dx, w) = (advance as f64 * k, dx as f64 * k, self.file.advance(g) * k);
-                if dx != 0.0 {
-                    crate::draw::write_num(&mut out, -dx);
-                    out.push(b' ');
-                }
-                let id = self.file_id(g);
-                let _ = write!(out, "<{id:04X}> ");
-                let after = w + dx - a;
-                if after != 0.0 {
-                    crate::draw::write_num(&mut out, after);
-                    out.push(b' ');
-                }
-                i += 1;
-            }
-            if out.last() == Some(&b' ') {
-                out.pop();
-            }
-            out.extend_from_slice(b"] TJ");
-            if i < layout.glyphs.len() {
-                out.push(b'\n');
-            }
+            let pad = layout.spans.is_some();
+            self.place(
+                &mut out,
+                &layout.glyphs[at..at + n],
+                &pos[at..at + n],
+                size,
+                &mut rise,
+                pad,
+            );
+            out.extend_from_slice(b"\nEMC\n");
+            at += n;
         }
         if rise != 0.0 {
-            out.extend_from_slice(b"\n0 Ts");
+            out.extend_from_slice(b"0 Ts\n");
         }
-        if actual {
-            out.extend_from_slice(b"\nEMC");
-        }
+        out.pop();
         Ok(out)
+    }
+
+    /// `TJ` (and `Ts` for a rise) that put `glyphs` where `pos` says.
+    ///
+    /// With `pad`, a space glyph (it draws nothing) comes first at the start
+    /// and last at the end. A viewer takes the place of an ActualText span
+    /// from its first and last glyph; marks there (placed before or after
+    /// the base) leave gaps or overlaps that it reads as spaces.
+    fn place(&self, out: &mut Vec<u8>, glyphs: &[u16], pos: &[[i32; 3]], size: f64, rise: &mut f64, pad: bool) {
+        use std::io::Write;
+        let k = 1000.0 / self.file.upem;
+        let dy = |i: usize| pos[i][2] as f64 * size / self.file.upem;
+        // where each glyph starts, from the start of the span (1000 units)
+        let mut pen = 0.0;
+        let mut xs = Vec::with_capacity(glyphs.len());
+        for p in pos {
+            xs.push(pen + p[1] as f64 * k);
+            pen += p[0] as f64 * k;
+        }
+        // (glyph, x, rise) in the order drawn
+        let mut items: Vec<(u16, f64, f64)> = (0..glyphs.len()).map(|i| (glyphs[i], xs[i], dy(i))).collect();
+        let space = self.file.glyph(0x20);
+        if pad && space != 0 {
+            let w = self.file.advance(space) * k;
+            items.insert(0, (space, 0.0, 0.0));
+            items.push((space, pen - w, 0.0));
+        }
+        let mut cur = 0.0;
+        let mut open = false;
+        let num = |out: &mut Vec<u8>, move_by: f64| {
+            if move_by != 0.0 {
+                crate::draw::write_num(out, -move_by);
+                out.push(b' ');
+            }
+        };
+        for (g, x, y) in items {
+            if y != *rise {
+                if open {
+                    out.pop();
+                    out.extend_from_slice(b"] TJ\n");
+                    open = false;
+                }
+                *rise = y;
+                crate::draw::write_num(out, *rise);
+                out.extend_from_slice(b" Ts\n");
+            }
+            if !open {
+                out.push(b'[');
+                open = true;
+            }
+            num(out, x - cur);
+            let id = self.file_id(g);
+            let _ = write!(out, "<{id:04X}> ");
+            cur = x + self.file.advance(g) * k;
+        }
+        if !open {
+            out.push(b'[');
+        }
+        num(out, pen - cur);
+        if out.last() == Some(&b' ') {
+            out.pop();
+        }
+        out.extend_from_slice(b"] TJ");
     }
 
     /// The glyphs of the W array and the ToUnicode CMap, as
     /// `(id in the file, glyph id in the font, code points)`.
     fn used_glyphs(&self) -> Vec<(u16, u16, Vec<u32>)> {
+        let st = self.state();
         if self.subset {
             // unlike pdf-lib, with `.notdef` (0): without a width in W, a
             // viewer draws it 1000 units wide
-            return self
+            return st
                 .remapper
                 .remapped_gids()
                 .enumerate()
-                .map(|(new, old)| (new as u16, old, self.code_points.get(&old).cloned().unwrap_or_default()))
+                .map(|(new, old)| (new as u16, old, st.code_points.get(&old).cloned().unwrap_or_default()))
                 .collect();
         }
         // all glyphs of the character set, sorted by id. Unlike pdf-lib,
         // also the glyphs that layout made (ligatures, alternates): without
         // a width in W, a viewer draws them 1000 units wide.
-        let mut cps = self.code_points.clone();
+        let mut cps = st.code_points.clone();
         for &c in &self.file.charset {
             cps.entry(self.file.glyph(c)).or_insert_with(|| vec![c]);
         }
@@ -806,7 +920,7 @@ impl CustomFont {
 
         // the font file
         let (cid_type0, stream) = if self.subset {
-            let sub = subsetter::subset(&file.data, 0, &self.remapper)
+            let sub = subsetter::subset(&file.data, 0, &self.state().remapper)
                 .map_err(|e| Error::generic(format!("can not subset the font: {e}")))?;
             if file.cff {
                 let font = FontRef::new(&sub).map_err(bad)?;
@@ -988,7 +1102,7 @@ mod tests {
             ),
         ];
         for (data, name, [h, h_no_desc, size], texts) in cases {
-            let mut f = font(data, false);
+            let f = font(data, false);
             assert_eq!(f.file.name, name);
             let [top, bottom, desc] = f.file.vertical();
             assert_eq!(((top - bottom) / 1000.0) * 10.0, h);
@@ -1014,7 +1128,7 @@ mod tests {
     #[test]
     fn features_turn_ligatures_off() {
         let file = Arc::new(FontFile::parse(TTF.to_vec()).unwrap());
-        let mut f = CustomFont::new(file, false, "Test".into(), parse_features(b"liga\x00"));
+        let f = CustomFont::new(file, false, "Test".into(), parse_features(b"liga\x00"));
         // f, f, i: no ligature
         assert_eq!(f.layout("ffi").unwrap().glyphs.len(), 3);
         assert_eq!(font(TTF, false).layout("ffi").unwrap().glyphs.len(), 1);
@@ -1022,14 +1136,14 @@ mod tests {
 
     #[test]
     fn subset_ids_count_from_one_in_order_of_use() {
-        let mut f = font(TTF, true);
+        let f = font(TTF, true);
         assert_eq!(f.encode("ba").unwrap(), b"00010002");
         assert_eq!(f.encode("abc").unwrap(), b"000200010003");
     }
 
     fn saved_font(data: &[u8], subset: bool) -> (lopdf::Document, ObjectId) {
         let mut d = create(false, b"");
-        let mut f = font(data, subset);
+        let f = font(data, subset);
         f.encode("office 日本").unwrap();
         let id = d.pdf.add_object(Object::Null);
         d.fonts.insert(id, crate::font::Embedded::Custom(Box::new(f)));
@@ -1111,6 +1225,31 @@ mod tests {
         };
         assert!(has(0xDF));
         assert!(has(0));
+    }
+
+    #[test]
+    fn thai_is_laid_out_like_harfbuzz_and_copies_right() {
+        // values of hb-shape (HarfBuzz) with this font
+        const THAI: &[u8] = include_bytes!("../../test/fixtures/fonts/noto-sans-thai.ttf");
+        let f = font(THAI, true);
+        let l = f.layout("น้ำ").unwrap();
+        // nikhahit (59) moves before the tone mark; sara aa (86) stays last
+        assert_eq!(l.glyphs[0], 71);
+        assert_eq!(l.glyphs.len(), 4);
+        assert_eq!(*l.glyphs.last().unwrap(), 86);
+        assert!(l.pos.is_some());
+        assert_eq!(f.width_of_text("น้ำ", 1000.0).unwrap(), 1019.0);
+        // a line never breaks before a mark or sara am
+        assert_eq!(f.break_points("น้ำใจ").unwrap(), [true, false, false, true, true]);
+        // the text is in an ActualText span; the glyphs are placed with TJ
+        let ops = String::from_utf8(f.show_text("น้ำ", 20.0).unwrap()).unwrap();
+        assert!(
+            ops.starts_with("/Span <</ActualText <FEFF0E190E490E33>>> BDC\n["),
+            "{ops}"
+        );
+        assert!(ops.ends_with("] TJ\nEMC") || ops.ends_with("0 Ts"), "{ops}");
+        // Latin text in the same font is still drawn like pdf-lib
+        assert_eq!(f.show_text("", 20.0).unwrap(), b"<> Tj");
     }
 
     /// `TTF` with its cmap replaced by `cmap`.

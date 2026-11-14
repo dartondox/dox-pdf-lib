@@ -73,4 +73,51 @@ void main() {
       expect(again.getPageCount(), 1);
     }
   });
+
+  test(
+    'form fields show Thai and Japanese in custom fonts, also flattened',
+    () async {
+      Uint8List thai = _font('noto-sans-thai.ttf');
+      for (bool subset in <bool>[false, true]) {
+        PDFDocument doc = await PDFDocument.create();
+        PDFFont th = await doc.embedFont(thai, subset: subset);
+        PDFFont jp = await doc.embedFont(otf, subset: subset);
+        PDFPage page = doc.addPage(<double>[400, 300]);
+        PDFForm form = doc.getForm();
+        PDFTextField a = form.createTextField('thai');
+        a.setText('น้ำใจ สวัสดีครับ');
+        a.addToPage(page, x: 20, y: 200, width: 300, height: 40, font: th);
+        PDFTextField b = form.createTextField('japanese');
+        b.addToPage(page, x: 20, y: 120, width: 300, height: 40);
+        b.setText('日本語のテキスト');
+        b.updateAppearances(jp);
+        // only the Thai field is still dirty, like in pdf-lib
+        form.updateFieldAppearances(th);
+        form.flatten();
+        Uint8List bytes = await doc.save();
+        File out = File(
+          '${Directory.systemTemp.createTempSync('dox_form').path}/f.pdf',
+        )..writeAsBytesSync(bytes);
+        ProcessResult r = await Process.run('pdftotext', <String>[
+          '-enc',
+          'UTF-8',
+          out.path,
+          '-',
+        ], stdoutEncoding: utf8);
+        List<String> lines = (r.stdout as String)
+            .split('\n')
+            .map((String l) => l.trim())
+            .where((String l) => l.isNotEmpty)
+            .toList();
+        expect(lines, <String>[
+          'น้ำใจ สวัสดีครับ',
+          '日本語のテキスト',
+        ], reason: '$subset');
+        out.parent.deleteSync(recursive: true);
+      }
+    },
+    skip: Process.runSync('which', <String>['pdftotext']).exitCode == 0
+        ? false
+        : 'needs pdftotext (poppler-utils)',
+  );
 }
