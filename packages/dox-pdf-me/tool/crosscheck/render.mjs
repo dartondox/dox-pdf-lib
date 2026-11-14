@@ -31,7 +31,13 @@ const plugins = {
   checkbox: schemas.checkbox,
   radioGroup: schemas.radioGroup,
   select: schemas.select,
+  signature: schemas.signature,
+  circleMark: schemas.circleMark,
+  multiVariableText: schemas.multiVariableText,
 };
+
+// CROSSCHECK_ONLY=a,b renders only the cases with these names.
+const only = process.env.CROSSCHECK_ONLY?.split(',');
 
 function readFile(name) {
   for (const dir of fileDirs) {
@@ -56,6 +62,7 @@ function resolve(value) {
 
 writeFileSync(join(outDir, 'cases.json'), JSON.stringify(cases, null, 1));
 for (const c of cases) {
+  if (only && !only.includes(c.name)) continue;
   const pdf = await generate({
     template: resolve(c.template),
     inputs: resolve(c.inputs),
