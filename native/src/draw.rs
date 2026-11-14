@@ -18,8 +18,6 @@ use crate::page;
 /// Drawing state of a document. Part of `Doc`, so it is cloned with it.
 #[derive(Clone, Default)]
 pub struct DrawState {
-    /// Embedded standard fonts: font ref -> `StandardFonts` index.
-    pub fonts: HashMap<ObjectId, i32>,
     pages: HashMap<ObjectId, PageState>,
     /// The shared `q` and `Q` streams that wrap old page content.
     push_pop: Option<(ObjectId, ObjectId)>,
@@ -425,7 +423,13 @@ fn words(text: &[char], breaks: &[Vec<char>]) -> Vec<String> {
 }
 
 /// pdf-lib's `breakTextIntoLines`.
-fn break_lines(text: &str, breaks: &[Vec<char>], max_width: f64, f: &font::Font, size: f64) -> Result<Vec<String>> {
+fn break_lines(
+    text: &str,
+    breaks: &[Vec<char>],
+    max_width: f64,
+    f: &mut font::Embedded,
+    size: f64,
+) -> Result<Vec<String>> {
     let chars: Vec<char> = clean_text(text).chars().collect();
     let mut lines = Vec::new();
     let mut line = String::new();
@@ -845,6 +849,7 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
     }
     let pdf = &mut doc.pdf;
     let state = &mut doc.draw;
+    let fonts = &mut doc.fonts;
     let input = Input { nums };
     let gs = graphics_state(pdf, state, page, nums[0], nums[1], nums[2] as i32)?;
     let mut o = Ops::default();
@@ -852,11 +857,7 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
     match kind {
         TEXT => {
             let font_ref = ref_from_i64(a(0)? as i64);
-            let font_id = *state
-                .fonts
-                .get(&font_ref)
-                .ok_or_else(|| Error::generic("the font is not embedded in this document"))?;
-            let f = font::font(font_id)?;
+            let f = font::embedded(fonts, font_ref)?;
             let size = a(1)?;
             let text_len = (a(9)? as usize).min(bytes.len());
             let text = std::str::from_utf8(&bytes[..text_len]).map_err(|_| Error::generic("text is not UTF-8"))?;
@@ -876,8 +877,8 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
                     .collect();
                 break_lines(text, &breaks, max_width, f, size)?
             };
-            let encoded = lines.iter().map(|l| f.glyphs(l)).collect::<Result<Vec<_>>>()?;
-            let font_name = resource(pdf, state, page, ResKey::Font(font_ref), b"Font", &f.name, || {
+            let encoded = lines.iter().map(|l| f.encode(l)).collect::<Result<Vec<_>>>()?;
+            let font_name = resource(pdf, state, page, ResKey::Font(font_ref), b"Font", f.name()?, || {
                 Object::Reference(font_ref)
             })?;
             let (rot, xskew, yskew) = (a(2)?, a(3)?, a(4)?);
@@ -898,11 +899,9 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
                 ],
                 "Tm",
             );
-            for glyphs in encoded {
+            for hex in encoded {
                 o.0.push(b'<');
-                for (code, _) in glyphs {
-                    let _ = write!(o.0, "{code:02X}");
-                }
+                o.0.extend_from_slice(&hex);
                 o.0.extend_from_slice(b"> Tj\nT*\n");
             }
             o.op(&[], "ET");
@@ -1275,7 +1274,7 @@ mod tests {
         let p = new_page(&mut d.pdf, 200.0, 200.0);
         insert_page(&mut d.pdf, 0, p).unwrap();
         let f = font::embed(&mut d.pdf, 4, None).unwrap();
-        d.draw.fonts.insert(f, 4);
+        d.fonts.insert(f, font::Embedded::Standard(4));
         let mut nums = vec![f64::NAN; ARGS];
         nums[2] = -1.0;
         nums[3..8].copy_from_slice(&[2.0, 1.0, 0.0, 0.0, 0.0]);
@@ -1364,7 +1363,7 @@ mod tests {
         let mut d = create(false, b"");
         let p = new_page(&mut d.pdf, 200.0, 200.0);
         let f = font::embed(&mut d.pdf, 4, None).unwrap();
-        d.draw.fonts.insert(f, 4);
+        d.fonts.insert(f, font::Embedded::Standard(4));
         let mut nums = vec![f64::NAN; ARGS];
         nums[2] = -1.0;
         nums[3] = 0.0;

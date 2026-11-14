@@ -75,7 +75,29 @@ Drawing options are named parameters with the pdf-lib names and defaults. Some s
 - `pushOperators` takes a list: `page.pushOperators([pushGraphicsState(), ...])`.
 - A font, image or graphics state (opacity, blend mode) is added once per page, not once per draw call. Resource names are `Helvetica-1`, `Image-1`, `GS-1` (pdf-lib adds a random number).
 - Pages with no font set share one Helvetica per document (pdf-lib embeds one per page).
-- `embedFont` takes `StandardFonts` only for now. Custom font files come later.
+
+### Custom fonts
+
+```dart
+Uint8List bytes = File('NotoSansJP-Regular.otf').readAsBytesSync();
+PDFFont font = await doc.embedFont(bytes, subset: true);
+page.drawText('日本語のテキスト', x: 50, y: 700, font: font, size: 20);
+double width = font.widthOfTextAtSize('日本語', 20);
+```
+
+`embedFont` takes TrueType and OpenType (CFF) files, like pdf-lib with fontkit, with the options `subset`, `customName` and `features` (eg. `{'liga': false}`).
+The font code is built in, so there is no `registerFontkit`.
+Text layout (ligatures and the other default OpenType features) and all metrics are the same as fontkit, so `widthOfTextAtSize` and `heightAtSize` give the same numbers as pdf-lib.
+The font is read once; a subset is made when you save. A subset of a big CJK font (16 MB, 200 characters) takes about 25 ms.
+
+Differences from pdf-lib:
+
+- A full OpenType/CFF font is embedded as `FontFile3` (`/OpenType`). pdf-lib embeds it as a TrueType `FontFile2`.
+- The widths (`/W`) of a full font also have the glyphs that layout makes but the cmap has not (eg. some ligatures and alternate digits). The widths of a subset also have `.notdef`. pdf-lib leaves them out, so viewers draw these glyphs 1000 units wide.
+- The ToUnicode CMap of a full font also has these glyphs, so copy and paste works for them.
+- The `BaseFont` name is `<PostScript name>-<n>`; pdf-lib adds a random number.
+- Text layout uses harfrust (HarfBuzz in Rust). It gives the same glyphs as fontkit for normal text. Complex scripts (eg. Arabic, Indic) may differ in rare cases, where HarfBuzz is more correct.
+- Font collections (`.ttc`), WOFF and CFF2 (variable OpenType) fonts are not supported. A variable TrueType font uses its default instance, like fontkit.
 
 ### Forms
 
@@ -107,7 +129,7 @@ Text fields, check boxes, radio groups, dropdowns, option lists, buttons and sig
 
 Ready now: documents, pages, page boxes and rotation, copy and merge, metadata.
 Next: drawing (text, shapes, images), fonts, forms, attachments and embedded pages.
-Drawing is ready too: text with the 14 standard fonts, shapes, SVG paths, JPEG and PNG images.
+Drawing is ready too: text with the 14 standard fonts or custom fonts (TrueType, OpenType, subsets), shapes, SVG paths, JPEG and PNG images.
 Forms are ready too: read, fill, create and flatten fields.
 
 ## The native library

@@ -104,7 +104,6 @@ void main() {
     );
     expect(() => f.widthOfTextAtSize('a世', 12), error);
     expect(() => doc.addPage().drawText('a世'), error);
-    expect(() => doc.embedFont(Uint8List(4)), throwsA(isA<UnsupportedError>()));
   });
 
   test('every draw call and a save and load round trip', () async {
