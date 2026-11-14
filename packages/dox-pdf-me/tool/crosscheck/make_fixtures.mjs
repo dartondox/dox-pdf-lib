@@ -1,7 +1,7 @@
 // Makes the small fixture files of the crosscheck (run once; the files are
 // committed in test/fixtures/crosscheck):
 //   node make_fixtures.mjs <out dir>
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import jpeg from 'jpeg-js';
@@ -67,3 +67,28 @@ p2.drawRectangle({ x: 0, y: 0, width: 400, height: 300, color: rgb(0.95, 0.9, 0.
 p2.drawText('Base page 2', { x: 60, y: 220, size: 18, font, color: rgb(0.6, 0.2, 0.2) });
 p2.setCropBox(40, 30, 320, 240);
 writeFileSync(join(out, 'base.pdf'), await doc.save({ useObjectStreams: false }));
+
+// copies with an EXIF orientation: JPEG 3, 6 and 8 (APP1), PNG 6 (eXIf)
+function tiff(orientation) {
+  const t = Buffer.alloc(26);
+  t.write('MM', 0, 'ascii');
+  t.writeUInt16BE(42, 2);
+  t.writeUInt32BE(8, 4);
+  t.writeUInt16BE(1, 8);
+  t.writeUInt16BE(0x0112, 10);
+  t.writeUInt16BE(3, 12);
+  t.writeUInt32BE(1, 14);
+  t.writeUInt16BE(orientation, 18);
+  t.writeUInt32BE(0, 22);
+  return t;
+}
+const plainJpg = readFileSync(join(out, 'image.jpg'));
+for (const o of [3, 6, 8]) {
+  const payload = Buffer.concat([Buffer.from('Exif\0\0', 'binary'), tiff(o)]);
+  const len = Buffer.alloc(2);
+  len.writeUInt16BE(payload.length + 2);
+  const app1 = Buffer.concat([Buffer.from([0xff, 0xe1]), len, payload]);
+  writeFileSync(join(out, `image-o${o}.jpg`), Buffer.concat([plainJpg.subarray(0, 2), app1, plainJpg.subarray(2)]));
+}
+const iend = png.length - 12;
+writeFileSync(join(out, 'image-o6.png'), Buffer.concat([png.subarray(0, iend), chunk('eXIf', tiff(6)), png.subarray(iend)]));

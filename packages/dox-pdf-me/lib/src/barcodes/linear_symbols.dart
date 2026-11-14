@@ -167,21 +167,23 @@ class LinearSymbolBuilder {
     const double w = JapanPostEncoder.barWidth;
     return l.render(
       <BwippBar>[
+        // BWIPP draws the empty bar (check character 19) with no height;
+        // bwip-js still shows it as a 1 unit mark at the bottom
         for (int i = 0; i < bars.length; i++)
-          if (bars[i] != JapanPostBar.none)
-            BwippBar(
-              i * JapanPostEncoder.pitch + w / 2,
-              w,
-              switch (bars[i]) {
-                JapanPostBar.ascender || JapanPostBar.tracker => 3 * eighth,
-                _ => 0,
-              },
-              switch (bars[i]) {
-                JapanPostBar.full => 8 * eighth,
-                JapanPostBar.ascender || JapanPostBar.descender => 5 * eighth,
-                _ => 2 * eighth,
-              },
-            ),
+          BwippBar(
+            i * JapanPostEncoder.pitch + w / 2,
+            w,
+            switch (bars[i]) {
+              JapanPostBar.ascender || JapanPostBar.tracker => 3 * eighth,
+              _ => 0,
+            },
+            switch (bars[i]) {
+              JapanPostBar.full => 8 * eighth,
+              JapanPostBar.ascender || JapanPostBar.descender => 5 * eighth,
+              JapanPostBar.none => 0,
+              _ => 2 * eighth,
+            },
+          ),
       ],
       (bars.length - 1) * JapanPostEncoder.pitch + w,
       value,

@@ -23,6 +23,7 @@ const String fixtureDir = 'test/fixtures/crosscheck';
 const Map<String, double> tolerance = <String, double>{
   'pixels': 0.004,
   'barcode': 0.03,
+  'reencoded': 0.02,
   'matrix': 0.1,
 };
 

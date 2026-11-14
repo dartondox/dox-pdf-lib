@@ -227,8 +227,10 @@ This list compares with pdfme 6.2.8.
   Those stay as they are.
 - **Not supported yet:** `overflow: "expand"` (the text box does not grow),
   inline markdown text, tables, `multiVariableText`, font URLs, base PDFs
-  with a user password (`basePdfPassword`), link annotations of the base PDF,
-  and the EXIF orientation of JPEG and PNG images.
+  with a user password (`basePdfPassword`), and link annotations of the base PDF.
+- **EXIF orientation** of JPEG and PNG images works like in pdfme. pdfme
+  turns the pixels and encodes a JPEG again; this package keeps the file and
+  turns it when it draws it. The page looks the same.
 
 ## Platforms
 

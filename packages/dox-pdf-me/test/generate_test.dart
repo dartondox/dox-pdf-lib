@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dox_pdf_me/dox_pdf_me.dart';
 import 'package:dox_pdf_me/src/expression.dart';
 import 'package:dox_pdf_me/src/generate.dart';
 import 'package:dox_pdf_me/src/schemas/date_format.dart';
+import 'package:dox_pdf_me/src/schemas/image_orientation.dart';
 import 'package:dox_pdf_me/src/schemas/image_plugin.dart';
 import 'package:test/test.dart';
 
@@ -337,6 +339,33 @@ void main() {
         () => const DatePlugin.date().formatValue('2024/05/07', null, 'xx'),
         throwsArgumentError,
       );
+    });
+  });
+
+  group('EXIF orientation', () {
+    int read(String name) => ImageOrientation.read(
+      File('test/fixtures/crosscheck/$name').readAsBytesSync(),
+    );
+
+    test('JPEG APP1 and PNG eXIf', () {
+      expect(read('image.jpg'), 1);
+      expect(read('image.png'), 1);
+      expect(read('image-o3.jpg'), 3);
+      expect(read('image-o6.jpg'), 6);
+      expect(read('image-o8.jpg'), 8);
+      expect(read('image-o6.png'), 6);
+      expect(ImageOrientation.read(Uint8List.fromList(<int>[0xff, 0xd8])), 1);
+    });
+
+    test('matrices map the stored image to the shown image', () {
+      // orientation 6 turns 90 degrees clockwise: the stored top left
+      // (0, 1) is shown at the top right (1, 1)
+      List<double> m = ImageOrientation.matrix(6);
+      expect((m[0] * 0 + m[2] * 1 + m[4], m[1] * 0 + m[3] * 1 + m[5]), (1, 1));
+      m = ImageOrientation.matrix(8);
+      expect((m[0] * 0 + m[2] * 1 + m[4], m[1] * 0 + m[3] * 1 + m[5]), (0, 0));
+      expect(ImageOrientation.swaps(5), isTrue);
+      expect(ImageOrientation.swaps(4), isFalse);
     });
   });
 

@@ -9,3 +9,4 @@
   all types of this package.
 - Roboto is the default font, like in pdfme.
 - Barcodes are drawn as vectors.
+- Images with an EXIF orientation are turned like in pdfme.

@@ -214,6 +214,10 @@ class _TextLines {
         opacity: opacity,
       );
     }
+    // pdfme sets `Tc` outside q/Q and leaves it set. Set it back to 0, so
+    // text drawn later on the page (barcode text, SVG text, other plugins)
+    // does not get this spacing.
+    props.page.pushOperators(<PDFOperator>[setCharacterSpacing(0)]);
   }
 
   /// An underline or strikethrough line at [y], `1 pt` longer than the text.

@@ -243,6 +243,30 @@ void main() {
         JapanPostBar.full,
       ]);
     });
+    test('every bar is the same as bwip-js (20 inputs)', () {
+      // made with bwip-js 4.11.4: one letter per bar, F full, A ascender,
+      // D descender, T tracker, - the empty bar of check character 19
+      Map<String, dynamic> golden = jsonDecode(
+        File('test/fixtures/barcodes/japanpost_bwip.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(golden, hasLength(20));
+      const Map<JapanPostBar, String> letters = <JapanPostBar, String>{
+        JapanPostBar.full: 'F',
+        JapanPostBar.ascender: 'A',
+        JapanPostBar.descender: 'D',
+        JapanPostBar.tracker: 'T',
+        JapanPostBar.none: '-',
+      };
+      golden.forEach((String input, dynamic expected) {
+        List<JapanPostBar> bars = JapanPostEncoder.encode(input)!;
+        expect(
+          bars.map((JapanPostBar b) => letters[b]).join(),
+          expected,
+          reason: input,
+        );
+      });
+    });
+
     test('too long input gives null (BWIPP fails)', () {
       expect(JapanPostEncoder.encode('1000013${'A' * 8}'), isNull);
       expect(JapanPostEncoder.encode('1000013${'1' * 13}'), isNotNull);

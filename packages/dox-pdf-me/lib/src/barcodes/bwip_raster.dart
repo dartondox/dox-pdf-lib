@@ -80,11 +80,13 @@ class BwipRaster {
     if (text != null) b.addY(textBase - textDepth - textDescent);
 
     double dx = sx.floor().isOdd ? -0.5 : 0.5;
+    // bwip-js moves a bar with no height by half a unit, like a bar's x
+    double dy = sy.floor().isOdd ? -0.5 : 0.5;
     List<BarcodeRect> strokes = <BarcodeRect>[
       for (_DeviceBar d in device)
         BarcodeRect(
           d.x - b.minX + (d.pen.isOdd ? dx : 0) - d.pen / 2,
-          (b.maxY - d.y1).toDouble(),
+          (b.maxY - d.y1) + (d.pen.isOdd && d.y0 == d.y1 ? dy : 0),
           d.pen.toDouble(),
           (d.y1 - d.y0 + 1).toDouble(),
         ),

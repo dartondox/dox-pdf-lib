@@ -6,6 +6,9 @@
 // - 'pixels': the pages must look the same (a few edge pixels may differ).
 // - 'barcode': like 'pixels', but with a larger tolerance for the human
 //   readable text (OCR-B in pdfme, Helvetica here).
+// - 'reencoded': images with an EXIF orientation. pdfme decodes, turns and
+//   encodes them again (JPEG quality 90); we turn them with a transform. The
+//   colors near the edges of the blocks differ a little.
 // - 'matrix': 2D codes (QR, Data Matrix, PDF417). The modules can differ
 //   (mask, encoding), so only the symbol box is compared, and the codes are
 //   decoded with zbarimg when it is installed.
@@ -131,6 +134,17 @@ const images = [
   box('image', 5, 52, 30, 40, { rotate: 25 }),
   box('image', 45, 52, 40, 40, { objectFit: 'cover', rotate: 15, opacity: 0.7 }),
   box('image', 95, 52, 50, 40, { objectPosition: 'center top' }),
+];
+
+// EXIF orientation 3, 6 and 8 (JPEG) and 6 (PNG): pdfme turns the pixels
+const exif = (name, type) => ({ $file: name, prefix: `data:image/${type};base64,` });
+const oriented = [
+  box('image', 5, 5, 30, 40),
+  box('image', 40, 5, 30, 40),
+  box('image', 75, 5, 30, 40),
+  box('image', 110, 5, 35, 40),
+  box('image', 5, 55, 60, 35, { objectFit: 'cover', rotate: 20 }),
+  box('image', 75, 55, 60, 35, { objectPosition: 'right bottom', opacity: 0.6 }),
 ];
 
 const svgSample =
@@ -307,6 +321,14 @@ export const cases = [
   ], { options: { font: fonts } }),
   single('shapes', shapes, []),
   single('image', images, [png, jpg, png, jpg, png, jpg, png]),
+  single('image-orientation', oriented, [
+    exif('image-o3.jpg', 'jpeg'),
+    exif('image-o6.jpg', 'jpeg'),
+    exif('image-o8.jpg', 'jpeg'),
+    exif('image-o6.png', 'png'),
+    exif('image-o6.jpg', 'jpeg'),
+    exif('image-o8.jpg', 'jpeg'),
+  ], { compare: 'reencoded' }),
   single('svg', svgs, [svgSample, svgSample, svgSample, svgSample]),
   single('checkbox-radio', checks, ['true', 'false', 'true', 'true', 'true', 'false', '', 'true']),
   single('date-time', dates, [
