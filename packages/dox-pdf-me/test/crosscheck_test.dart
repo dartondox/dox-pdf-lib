@@ -82,13 +82,15 @@ void main() {
     for (Map<String, dynamic> c in cases) {
       String name = c['name'] as String;
       String compare = c['compare'] as String;
-      Uint8List bytes = await generate(
+      Uint8List bytes = await generateJson(
         template: _resolve(c['template']) as Map<String, dynamic>,
         inputs: <Map<String, dynamic>>[
           for (Object? i in _resolve(c['inputs']) as List<dynamic>)
             i! as Map<String, dynamic>,
         ],
-        options: _resolve(c['options'] ?? <String, dynamic>{}),
+        options: _resolve(
+          c['options'] ?? <String, dynamic>{},
+        ) as Map<String, dynamic>,
         plugins: builtInPlugins,
       );
       File('$outDir/dox/$name.pdf').writeAsBytesSync(bytes);

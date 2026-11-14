@@ -4,7 +4,7 @@ import '../color.dart';
 import '../constants.dart';
 import '../fonts/font_metrics.dart';
 import '../layout.dart';
-import '../plugin.dart';
+import '../raw_props.dart';
 import '../schema.dart';
 import 'text_box.dart';
 import 'text_measure.dart';
@@ -17,8 +17,8 @@ import 'wrap.dart';
 /// `lineHeight` (1), `characterSpacing` (0), `fontColor`,
 /// `backgroundColor`, `borderColor`, `borderWidth`, `padding`,
 /// `underline`, `strikethrough` and `dynamicFontSize`.
-class TextPlugin extends SchemaPlugin {
-  const TextPlugin();
+class TextDrawer implements RawDrawer {
+  const TextDrawer();
 
   static const double defaultFontSize = 13;
 
@@ -26,17 +26,13 @@ class TextPlugin extends SchemaPlugin {
   String get type => 'text';
 
   @override
-  Future<void> pdf(RenderProps props) async {
+  Future<void> draw(RawProps props) async {
     String value = props.value;
     if (value.isEmpty) return;
-    Schema schema = props.schema;
+    RawSchema schema = props.schema;
     PDFPage page = props.page;
     double pageHeight = page.getHeight();
-    PdfLayout box = PdfLayout.of(
-      schema,
-      pageHeight,
-      applyRotateTranslate: false,
-    );
+    PdfLayout box = layoutOf(schema, pageHeight, applyRotateTranslate: false);
     Point pivot = (
       x: box.x + box.width / 2,
       y: pageHeight - mm2pt(schema.y) - box.height / 2,
@@ -69,8 +65,8 @@ class _TextLines {
     required this.measure,
   }) : schema = props.schema;
 
-  final RenderProps props;
-  final Schema schema;
+  final RawProps props;
+  final RawSchema schema;
   final PdfLayout box;
   final Point pivot;
   final BoxArea area;
@@ -93,14 +89,14 @@ class _TextLines {
     );
     bool expand = schema.string('overflow') == 'expand' && props.basePdf is Map;
     if (dynamic == null || expand) {
-      return fontSize ?? TextPlugin.defaultFontSize;
+      return fontSize ?? TextDrawer.defaultFontSize;
     }
     // pdfme: `fontSize || 13`, so 0 is the default too
     return dynamic.resolveSize(
       measure: measure,
       value: props.value,
       startSize: fontSize == null || fontSize == 0
-          ? TextPlugin.defaultFontSize
+          ? TextDrawer.defaultFontSize
           : fontSize,
       boxWidth: area.width,
       boxHeight: area.height,

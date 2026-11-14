@@ -2,7 +2,8 @@ import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 
 import '../color.dart';
 import '../layout.dart';
-import '../plugin.dart';
+import '../options.dart';
+import '../raw_props.dart';
 import '../schema.dart';
 import 'barcode_fit_layout.dart';
 import 'barcode_painter.dart';
@@ -25,8 +26,8 @@ export 'barcode_validator.dart'
 ///
 /// The bars and modules follow bwip-js (which pdfme uses). The human
 /// readable text is drawn in Helvetica, not OCR-B: see [BarcodePainter].
-class BarcodePlugin extends SchemaPlugin {
-  const BarcodePlugin(this.type);
+class BarcodeDrawer implements RawDrawer {
+  const BarcodeDrawer(this.type);
 
   @override
   final String type;
@@ -34,10 +35,10 @@ class BarcodePlugin extends SchemaPlugin {
   static const String _fontKey = 'barcode:helvetica';
 
   @override
-  Future<void> pdf(RenderProps props) async {
+  Future<void> draw(RawProps props) async {
     String value = props.value;
     if (!validateBarcodeInput(type, value)) return;
-    Schema schema = props.schema;
+    RawSchema schema = props.schema;
     MatrixSymbol? matrix = MatrixSymbolBuilder.build(type, value);
     // pdfme asks bwip-js for a 2D symbol of the fitted size (in mm)
     BarcodeFitLayout? fitted = matrix == null
@@ -60,12 +61,12 @@ class BarcodePlugin extends SchemaPlugin {
     if (symbol == null) return;
 
     PDFPage page = props.page;
-    PdfLayout box = PdfLayout.of(
+    PdfLayout box = layoutOf(
       schema,
       page.getHeight(),
       applyRotateTranslate: false,
     );
-    String? colorType = props.options.colorType;
+    ColorType? colorType = props.options.colorType;
     bool rotated = box.rotate != 0;
     if (rotated) {
       double px = box.x + box.width / 2;
@@ -88,7 +89,7 @@ class BarcodePlugin extends SchemaPlugin {
   /// Draws [symbol] in [box]: stretched to the box, or centered with the
   /// natural [ratio] (width : height) of a 2D symbol.
   void _drawSymbol(
-    RenderProps props,
+    RawProps props,
     PdfLayout box,
     BarcodeSymbol symbol,
     double? ratio,
@@ -99,8 +100,8 @@ class BarcodePlugin extends SchemaPlugin {
       naturalWidth: ratio,
       naturalHeight: ratio == null ? null : 1,
     );
-    String? colorType = props.options.colorType;
-    Schema schema = props.schema;
+    ColorType? colorType = props.options.colorType;
+    RawSchema schema = props.schema;
     BarcodePainter(props.page).paint(
       symbol,
       left: box.x + fit.offsetX,
@@ -121,7 +122,7 @@ class BarcodePlugin extends SchemaPlugin {
   }
 
   /// `includetext`: true when the key is missing, like pdfme.
-  static bool _includeText(Schema schema) =>
+  static bool _includeText(RawSchema schema) =>
       !schema.json.containsKey('includetext') ||
       schema.json['includetext'] == true;
 
@@ -140,9 +141,9 @@ class BarcodePlugin extends SchemaPlugin {
 
   static void _drawBackground(
     PDFPage page,
-    Schema schema,
+    RawSchema schema,
     PdfLayout box,
-    String? colorType,
+    ColorType? colorType,
   ) {
     String? hex = _withHash(schema.string('backgroundColor'));
     if (hex == null || hex.isEmpty) return;
@@ -159,8 +160,11 @@ class BarcodePlugin extends SchemaPlugin {
   }
 
   /// Helvetica, embedded once per document.
-  static PDFFont _font(RenderProps props) => props.cache.putIfAbsent(
-    _fontKey,
-    () => props.doc.embedStandardFont(StandardFonts.helvetica),
-  ) as PDFFont;
+  static PDFFont _font(RawProps props) {
+    PDFFont? font = props.cache.get<PDFFont>(_fontKey);
+    if (font != null) return font;
+    font = props.doc.embedStandardFont(StandardFonts.helvetica);
+    props.cache.set<PDFFont>(_fontKey, font);
+    return font;
+  }
 }

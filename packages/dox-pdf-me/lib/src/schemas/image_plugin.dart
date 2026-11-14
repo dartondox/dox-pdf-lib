@@ -6,15 +6,15 @@ import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 
 import '../constants.dart';
 import '../layout.dart';
-import '../plugin.dart';
+import '../raw_props.dart';
 import '../schema.dart';
 import 'image_orientation.dart';
 
 /// The `image` schema type. The value is a PNG or JPEG data URL (or plain
 /// base64). Props: `objectFit` (`contain` default, `cover`) and
 /// `objectPosition` (eg. `left top`, default `center center`).
-class ImagePlugin extends SchemaPlugin {
-  const ImagePlugin();
+class ImageDrawer implements RawDrawer {
+  const ImageDrawer();
 
   static const List<String> positions = <String>[
     'left top',
@@ -32,10 +32,10 @@ class ImagePlugin extends SchemaPlugin {
   String get type => 'image';
 
   @override
-  Future<void> pdf(RenderProps props) async {
+  Future<void> draw(RawProps props) async {
     String value = props.value;
     if (value.isEmpty) return;
-    Schema schema = props.schema;
+    RawSchema schema = props.schema;
     (PDFImage, int) embedded = await _embed(props, value);
     PDFImage image = embedded.$1;
     int orientation = embedded.$2;
@@ -45,7 +45,7 @@ class ImagePlugin extends SchemaPlugin {
       px2mm(swap ? image.height : image.width),
       px2mm(swap ? image.width : image.height),
     );
-    Schema fitted = schema.copyWith(<String, dynamic>{
+    RawSchema fitted = schema.copyWith(<String, dynamic>{
       'width': fit.width,
       'height': fit.height,
       'position': <String, double>{
@@ -54,7 +54,7 @@ class ImagePlugin extends SchemaPlugin {
       },
     });
     double pageHeight = props.page.getHeight();
-    PdfLayout box = PdfLayout.of(fitted, pageHeight);
+    PdfLayout box = layoutOf(fitted, pageHeight);
     if (fit.cover) _clip(props.page, schema, pageHeight);
     if (orientation == 1) {
       props.page.drawImage(
@@ -102,9 +102,9 @@ class ImagePlugin extends SchemaPlugin {
 
   /// Embeds the image once per document, like pdfme's image cache. Also
   /// gives its EXIF orientation.
-  Future<(PDFImage, int)> _embed(RenderProps props, String value) async {
-    Object? cached = props.cache['image:$value'];
-    if (cached is (PDFImage, int)) return cached;
+  Future<(PDFImage, int)> _embed(RawProps props, String value) async {
+    (PDFImage, int)? cached = props.cache.get<(PDFImage, int)>('image:$value');
+    if (cached != null) return cached;
     int marker = value.indexOf(';base64,');
     Uint8List bytes = base64.decode(
       marker >= 0 ? value.substring(marker + 8) : value,
@@ -119,17 +119,13 @@ class ImagePlugin extends SchemaPlugin {
         ? await props.doc.embedPng(bytes)
         : await props.doc.embedJpg(bytes);
     (PDFImage, int) out = (image, ImageOrientation.read(bytes));
-    props.cache['image:$value'] = out;
+    props.cache.set<(PDFImage, int)>('image:$value', out);
     return out;
   }
 
   /// `cover`: clip to the schema box (turned with the schema).
-  void _clip(PDFPage page, Schema schema, double pageHeight) {
-    PdfLayout plain = PdfLayout.of(
-      schema,
-      pageHeight,
-      applyRotateTranslate: false,
-    );
+  void _clip(PDFPage page, RawSchema schema, double pageHeight) {
+    PdfLayout plain = layoutOf(schema, pageHeight, applyRotateTranslate: false);
     double x = plain.x;
     double y = plain.y;
     double w = plain.width;
@@ -165,10 +161,10 @@ class ImageFit {
     required this.offsetY,
   });
 
-  factory ImageFit.of(Schema schema, double imageWidth, double imageHeight) {
+  factory ImageFit.of(RawSchema schema, double imageWidth, double imageHeight) {
     bool cover = schema.string('objectFit') == 'cover';
     String? asked = schema.string('objectPosition');
-    String position = !cover && ImagePlugin.positions.contains(asked)
+    String position = !cover && ImageDrawer.positions.contains(asked)
         ? asked!
         : 'center center';
     double boxW = schema.width;

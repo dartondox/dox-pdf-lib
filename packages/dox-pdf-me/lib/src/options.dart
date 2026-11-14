@@ -15,22 +15,36 @@ class GenerateOptions {
     this.creationDate,
     this.modificationDate,
     this.basePdfPassword,
-    Map<String, dynamic>? extra,
-  }) : extra = extra ?? <String, dynamic>{};
+  });
 
-  /// Reads the pdfme options map. Unknown keys go to [extra].
-  factory GenerateOptions.fromJson(Map<String, dynamic>? json) {
-    Map<String, dynamic> m = json ?? <String, dynamic>{};
+  /// Reads the pdfme options map.
+  factory GenerateOptions.fromJson(Map<String, Object?> json) {
+    Map<String, Object?> m = json;
     Object? fonts = m['font'];
     String? str(String key) => m[key] is String ? m[key] as String : null;
     return GenerateOptions(
       font: fonts is Map
           ? <String, FontSource>{
-              for (MapEntry<dynamic, dynamic> e in fonts.entries)
-                '${e.key}': FontSource.fromJson('${e.key}', e.value),
+              for (MapEntry<Object?, Object?> e in fonts.entries)
+                '${e.key}': switch (e.value) {
+                  Map<Object?, Object?> f => FontSource.fromJson(
+                    '${e.key}',
+                    <String, Object?>{
+                      for (MapEntry<Object?, Object?> k in f.entries)
+                        '${k.key}': k.value,
+                    },
+                  ),
+                  _ => throw ArgumentError.value(
+                    e.value,
+                    'font.${e.key}',
+                    'must be a map',
+                  ),
+                },
             }
           : null,
-      colorType: str('colorType'),
+      colorType: str('colorType')?.toLowerCase() == 'cmyk'
+          ? ColorType.cmyk
+          : null,
       lang: str('lang'),
       title: str('title'),
       author: str('author'),
@@ -43,15 +57,14 @@ class GenerateOptions {
       creationDate: _date(m['creationDate']),
       modificationDate: _date(m['modificationDate']),
       basePdfPassword: str('basePdfPassword'),
-      extra: m,
     );
   }
 
   /// Fonts by name. Null: the default font (Roboto).
   final Map<String, FontSource>? font;
 
-  /// `rgb` (default) or `cmyk`.
-  final String? colorType;
+  /// RGB (default) or CMYK colors.
+  final ColorType? colorType;
 
   /// The language of the PDF and the default date locale, eg. `en`.
   final String? lang;
@@ -68,12 +81,12 @@ class GenerateOptions {
   /// Not supported yet: encrypted base PDFs can not be read.
   final String? basePdfPassword;
 
-  /// The whole options map, for plugins that read their own keys.
-  final Map<String, dynamic> extra;
-
   static DateTime? _date(Object? v) => switch (v) {
     DateTime d => d,
     String s => DateTime.tryParse(s),
     _ => null,
   };
 }
+
+/// The color space of the colors in the PDF.
+enum ColorType { rgb, cmyk }

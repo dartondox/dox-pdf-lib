@@ -2,8 +2,8 @@
 ///
 /// Sizes and positions are in millimetres, like in pdfme. Read other keys
 /// of the map with [operator []], or with [string], [number] and [boolean].
-class Schema {
-  Schema(Map<String, dynamic> json) : json = Map<String, dynamic>.of(json);
+class RawSchema {
+  RawSchema(Map<String, dynamic> json) : json = Map<String, dynamic>.of(json);
 
   /// The JSON map of the schema. Extra keys (eg. `fontSize`) are here.
   final Map<String, dynamic> json;
@@ -51,8 +51,8 @@ class Schema {
   bool boolean(String key) => json[key] == true;
 
   /// A copy with other values for some keys.
-  Schema copyWith(Map<String, dynamic> changes) =>
-      Schema(<String, dynamic>{...json, ...changes});
+  RawSchema copyWith(Map<String, dynamic> changes) =>
+      RawSchema(<String, dynamic>{...json, ...changes});
 
   static double? _toDouble(Object? v) => switch (v) {
     num n => n.toDouble(),

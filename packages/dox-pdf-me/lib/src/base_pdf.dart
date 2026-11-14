@@ -5,7 +5,7 @@ import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 
 import 'constants.dart';
 import 'options.dart';
-import 'template.dart';
+import 'raw_template.dart';
 
 /// The base pages of a template: blank pages, or the pages of the base PDF
 /// (embedded once, drawn on every copy).
@@ -14,7 +14,7 @@ class BasePages {
 
   static Future<BasePages> create(
     PDFDocument doc,
-    Template template,
+    RawTemplate template,
     GenerateOptions options,
   ) async {
     if (template.isBlank) {
@@ -24,7 +24,7 @@ class BasePages {
         mm2pt(b['height'] as num),
       ], const <PDFEmbeddedPage>[]);
     }
-    PDFDocument source = await _load(_bytes(template.basePdf));
+    PDFDocument source = await _load(bytes(template.basePdf));
     try {
       List<PDFPage> pages = source.getPages();
       List<PageBoundingBox> boxes = <PageBoundingBox>[
@@ -81,7 +81,7 @@ class BasePages {
     }
   }
 
-  static Uint8List _bytes(Object? basePdf) => switch (basePdf) {
+  static Uint8List bytes(Object? basePdf) => switch (basePdf) {
     Uint8List b => b,
     ByteBuffer b => b.asUint8List(),
     List<int> b => Uint8List.fromList(b),

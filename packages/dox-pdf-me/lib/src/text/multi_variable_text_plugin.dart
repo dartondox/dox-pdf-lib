@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import '../expression.dart';
-import '../plugin.dart';
+import '../raw_props.dart';
 import '../schema.dart';
 import 'text_plugin.dart';
 
@@ -18,15 +18,15 @@ import 'text_plugin.dart';
 ///   nothing is drawn. With `required: true`, it is an error.
 /// - `readOnly: true`: the values come from the schema `content` (a JSON
 ///   object). With `contentSnapshot: true`, `content` is the text to draw.
-class MultiVariableTextPlugin extends SchemaPlugin {
-  const MultiVariableTextPlugin();
+class MultiVariableTextDrawer implements RawDrawer {
+  const MultiVariableTextDrawer();
 
   @override
   String get type => 'multiVariableText';
 
   @override
-  Future<void> pdf(RenderProps props) async {
-    Schema schema = props.schema;
+  Future<void> draw(RawProps props) async {
+    RawSchema schema = props.schema;
     String value;
     if (schema.readOnly) {
       value = readOnlyText(schema, props.value);
@@ -34,7 +34,7 @@ class MultiVariableTextPlugin extends SchemaPlugin {
       if (!validateVariables(props.value, schema)) return;
       value = substituteVariables(schema.string('text') ?? '', props.value);
     }
-    await const TextPlugin().pdf(props.copyWith(value: value));
+    await const TextDrawer().draw(props.copyWith(value: value));
   }
 
   /// pdfme's `substituteVariables`. [variables] is a JSON string or a
@@ -66,7 +66,7 @@ class MultiVariableTextPlugin extends SchemaPlugin {
   /// pdfme's `validateVariables`: false when a variable of the schema is
   /// missing in [value] (or `null`). Throws for bad JSON, and for a missing
   /// variable of a `required` schema.
-  static bool validateVariables(String value, Schema schema) {
+  static bool validateVariables(String value, RawSchema schema) {
     List<dynamic> names = _variables(schema);
     if (names.isEmpty) return true;
     Object? values;
@@ -101,7 +101,7 @@ class MultiVariableTextPlugin extends SchemaPlugin {
 
   /// pdfme's `resolveReadOnlyMultiVariableText`. [value] is the schema
   /// content, as `generate` passes it.
-  static String readOnlyText(Schema schema, String value) {
+  static String readOnlyText(RawSchema schema, String value) {
     String text = schema.string('text') ?? '';
     Object? content = schema['content'];
     if (_truthy(schema['contentSnapshot'])) {
@@ -134,7 +134,7 @@ class MultiVariableTextPlugin extends SchemaPlugin {
     }
   }
 
-  static List<dynamic> _variables(Schema schema) {
+  static List<dynamic> _variables(RawSchema schema) {
     Object? names = schema['variables'];
     if (names is List) return names;
     // pdfme reads `schema.variables.length` and fails without a list

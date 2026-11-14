@@ -2,12 +2,15 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dox_pdf_me/dox_pdf_me.dart';
+import 'package:dox_pdf_me/src/schema.dart';
+import 'package:dox_pdf_me/src/schemas/date_plugin.dart';
 import 'package:dox_pdf_me/src/expression.dart';
-import 'package:dox_pdf_me/src/generate.dart';
 import 'package:dox_pdf_me/src/schemas/date_format.dart';
 import 'package:dox_pdf_me/src/schemas/image_orientation.dart';
 import 'package:dox_pdf_me/src/schemas/image_plugin.dart';
 import 'package:test/test.dart';
+
+import 'support.dart';
 
 Map<String, dynamic> blank([List<Map<String, dynamic>>? staticSchema]) =>
     <String, dynamic>{
@@ -44,7 +47,7 @@ Matcher throwsMessage(String text) => throwsA(
 void main() {
   group('generate', () {
     test('one page per schema page and input, A4 size', () async {
-      Uint8List bytes = await generate(
+      Uint8List bytes = await generateJson(
         template: template(<List<Map<String, dynamic>>>[
           <Map<String, dynamic>>[schema('a', 'text')],
           <Map<String, dynamic>>[],
@@ -63,7 +66,7 @@ void main() {
     });
 
     test('pdfme metadata defaults and options', () async {
-      Uint8List bytes = await generate(
+      Uint8List bytes = await generateJson(
         template: template(<List<Map<String, dynamic>>>[
           <Map<String, dynamic>>[],
         ]),
@@ -80,7 +83,7 @@ void main() {
 
     test('without plugins only text works, like pdfme', () {
       expect(
-        generate(
+        generateJson(
           template: template(<List<Map<String, dynamic>>>[
             <Map<String, dynamic>>[schema('a', 'line')],
           ]),
@@ -92,7 +95,7 @@ void main() {
 
     test('builtInPlugins has every type', () {
       expect(
-        builtInPlugins.values.map((SchemaPlugin p) => p.type).toSet(),
+        builtInPlugins.values.map((SchemaPlugin<Schema> p) => p.type).toSet(),
         <String>{
           'text',
           'image',
@@ -117,14 +120,14 @@ void main() {
 
     test('a custom plugin', () async {
       _Recorder recorder = _Recorder();
-      await generate(
+      await generateJson(
         template: template(<List<Map<String, dynamic>>>[
           <Map<String, dynamic>>[schema('a', 'stamp'), schema('', 'stamp')],
         ]),
         inputs: <Map<String, dynamic>>[
           <String, dynamic>{'a': 42},
         ],
-        plugins: <String, SchemaPlugin>{'Stamp': recorder},
+        plugins: <String, SchemaPlugin<Schema>>{'Stamp': recorder},
       );
       // a schema with no name is skipped; numbers become text
       expect(recorder.values, <String>['42']);
@@ -132,12 +135,12 @@ void main() {
 
     test('user plugins must cover every type', () {
       expect(
-        generate(
+        generateJson(
           template: template(<List<Map<String, dynamic>>>[
             <Map<String, dynamic>>[schema('a', 'text'), schema('b', 'x')],
           ]),
           inputs: <Map<String, dynamic>>[<String, dynamic>{}],
-          plugins: <String, SchemaPlugin>{'Text': const TextPlugin()},
+          plugins: <String, SchemaPlugin<Schema>>{'Text': const TextPlugin()},
         ),
         throwsMessage('x of template.schemas is not found in plugins.'),
       );
@@ -145,7 +148,7 @@ void main() {
 
     test('required input', () {
       expect(
-        generate(
+        generateJson(
           template: template(<List<Map<String, dynamic>>>[
             <Map<String, dynamic>>[
               schema('a', 'text', <String, dynamic>{'required': true}),
@@ -161,7 +164,7 @@ void main() {
 
     test('font checks', () {
       Future<Uint8List> run(Map<String, dynamic> font, String fontName) =>
-          generate(
+          generateJson(
             template: template(<List<Map<String, dynamic>>>[
               <Map<String, dynamic>>[
                 schema('a', 'text', <String, dynamic>{'fontName': fontName}),
@@ -194,7 +197,7 @@ void main() {
 
     test('empty inputs throw', () {
       expect(
-        generate(
+        generateJson(
           template: template(<List<Map<String, dynamic>>>[]),
           inputs: <Map<String, dynamic>>[],
         ),
@@ -204,7 +207,7 @@ void main() {
 
     test('static schemas and the legacy format', () async {
       _Recorder recorder = _Recorder();
-      await generate(
+      await generateJson(
         template: <String, dynamic>{
           'basePdf': blank(<Map<String, dynamic>>[
             schema('', 'stamp', <String, dynamic>{
@@ -227,28 +230,16 @@ void main() {
         inputs: <Map<String, dynamic>>[
           <String, dynamic>{'x': 'value'},
         ],
-        plugins: <String, SchemaPlugin>{'Stamp': recorder},
+        plugins: <String, SchemaPlugin<Schema>>{'Stamp': recorder},
       );
       expect(recorder.values, <String>['1/2', 'value', '2/2']);
     });
   });
 
-  group('input values like pdfme (`input[name] || ""`)', () {
-    test('falsy values are empty', () {
-      for (Object? v in <Object?>[null, false, '', 0, 0.0, double.nan]) {
-        expect(Generator.inputValue(v), '', reason: '$v');
-      }
-      expect(Generator.inputValue(true), 'true');
-      expect(Generator.inputValue(1.5), '1.5');
-      expect(Generator.inputValue(3.0), '3');
-      expect(Generator.inputValue(<int>[1, 2]), '[1,2]');
-    });
-  });
-
   group('placeholders', () {
     PlaceholderResolver resolver = PlaceholderResolver(
-      schemas: <Schema>[
-        Schema(<String, dynamic>{
+      schemas: <RawSchema>[
+        RawSchema(<String, dynamic>{
           'name': 'company',
           'type': 'text',
           'readOnly': true,
@@ -345,19 +336,19 @@ void main() {
 
     test('default formats per locale', () {
       expect(
-        const DatePlugin.date().formatValue('2024/05/07', null, 'en'),
+        const DateDrawer.date().formatValue('2024/05/07', null, 'en'),
         '05/07/2024',
       );
       expect(
-        const DatePlugin.dateTime().formatValue('2024/05/07 18:30', '', 'de'),
+        const DateDrawer.dateTime().formatValue('2024/05/07 18:30', '', 'de'),
         '07.05.2024 18:30',
       );
       expect(
-        const DatePlugin.time().formatValue('18:30', 'bad jj', 'en'),
+        const DateDrawer.time().formatValue('18:30', 'bad jj', 'en'),
         '18:30',
       );
       expect(
-        () => const DatePlugin.date().formatValue('2024/05/07', null, 'xx'),
+        () => const DateDrawer.date().formatValue('2024/05/07', null, 'xx'),
         throwsArgumentError,
       );
     });
@@ -391,7 +382,7 @@ void main() {
   });
 
   group('image fit', () {
-    Schema s(String fit, String position) => Schema(<String, dynamic>{
+    RawSchema s(String fit, String position) => RawSchema(<String, dynamic>{
       'width': 40,
       'height': 20,
       'objectFit': fit,
@@ -412,12 +403,17 @@ void main() {
   });
 }
 
-class _Recorder extends SchemaPlugin {
+class _Recorder extends SchemaPlugin<UnknownSchema> {
   final List<String> values = <String>[];
 
   @override
   String get type => 'stamp';
 
   @override
-  Future<void> pdf(RenderProps props) async => values.add(props.value);
+  UnknownSchema fromJson(Map<String, Object?> json) =>
+      UnknownSchema.fromJson(json);
+
+  @override
+  Future<void> pdf(RenderProps<UnknownSchema> props) async =>
+      values.add(props.value);
 }

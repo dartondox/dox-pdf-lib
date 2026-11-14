@@ -6,8 +6,40 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:dox_pdf_me/dox_pdf_me.dart';
+import 'package:dox_pdf_me/src/expression.dart';
 
 const String crosscheckDir = 'tool/crosscheck';
+
+/// [generate] with pdfme JSON: the [template] and [options] maps go
+/// through `Template.fromJson` and `GenerateOptions.fromJson`, and each
+/// input value becomes a string like in pdfme ([jsInput]).
+Future<Uint8List> generateJson({
+  required Map<String, dynamic> template,
+  required List<Map<String, dynamic>> inputs,
+  Map<String, dynamic>? options,
+  Map<String, SchemaPlugin<Schema>>? plugins,
+}) async => generate(
+  template: Template.fromJson(template, plugins: plugins ?? builtInPlugins),
+  inputs: <Map<String, String>>[
+    for (Map<String, dynamic> input in inputs)
+      <String, String>{
+        for (MapEntry<String, dynamic> e in input.entries)
+          if (e.value != null) e.key: jsInput(e.value),
+      },
+  ],
+  options: options == null ? null : GenerateOptions.fromJson(options),
+  plugins: plugins,
+);
+
+/// pdfme's `input[name] || ''`, as a string: a list or a map becomes JSON.
+String jsInput(Object? value) => switch (value) {
+  null || false || '' => '',
+  num n when n == 0 || n.isNaN => '',
+  String s => s,
+  Map<dynamic, dynamic> _ || List<dynamic> _ => jsonEncode(value),
+  _ => PlaceholderResolver.jsString(value),
+};
 
 bool get hasPdfme =>
     Directory('$crosscheckDir/node_modules/@pdfme/generator').existsSync();

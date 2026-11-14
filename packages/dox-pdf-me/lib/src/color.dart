@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 
+import 'options.dart';
+
 final RegExp _validHex = RegExp(
   r'^#(?:[A-Fa-f0-9]{3,4}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$',
 );
@@ -32,12 +34,12 @@ bool isHexValid(String hex) => _validHex.hasMatch(hex);
 
 /// pdfme's `hex2PrintingColor`: null for an empty value, CMYK when
 /// [colorType] is `cmyk`, else RGB. Throws for a bad hex value.
-Color? hexToPrintingColor(String? hex, [String? colorType]) {
+Color? hexToPrintingColor(String? hex, [ColorType? colorType]) {
   if (hex == null || hex.isEmpty) return null;
   if (!isHexValid(hex)) throw ArgumentError('Invalid hex color value $hex');
   List<int> c = _hexToRgb(hex);
   RGB color = rgb(c[0] / 255, c[1] / 255, c[2] / 255);
-  return colorType?.toLowerCase() == 'cmyk' ? rgbToCmyk(color) : color;
+  return colorType == ColorType.cmyk ? rgbToCmyk(color) : color;
 }
 
 /// pdfme's `rgbColorToCmykColor`.

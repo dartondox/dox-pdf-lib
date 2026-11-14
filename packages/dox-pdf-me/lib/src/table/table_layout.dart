@@ -6,7 +6,7 @@ import '../dynamic_template.dart';
 import '../expression.dart';
 import '../fonts/font_store.dart';
 import '../schema.dart';
-import '../template.dart';
+import '../raw_template.dart';
 import '../text/text_box.dart';
 import '../text/text_measure.dart';
 import 'table_image.dart';
@@ -59,7 +59,7 @@ class TableLayout {
   /// schema draws (see [tableBodyRange]). [basePdf] is the `basePdf` of
   /// the template (a blank page limits the height of `auto` images).
   static Future<TableLayout> create(
-    Schema schema,
+    RawSchema schema,
     List<List<String>> body,
     FontStore fonts,
     Object? basePdf,
@@ -147,7 +147,7 @@ class TableLayout {
     return table;
   }
 
-  final Schema schema;
+  final RawSchema schema;
 
   /// mm, one per column.
   final List<double> columnWidths;
@@ -177,7 +177,7 @@ class TableLayout {
     Map<String, TextMeasure> measures = <String, TextMeasure>{};
     for (TableRow row in allRows) {
       for (TableCell cell in row.cells) {
-        Schema s = Schema(cell.style);
+        RawSchema s = RawSchema(cell.style);
         BoxSides border = BoxSides.fromJson(s['borderWidth']);
         BoxSides padding = BoxSides.fromJson(s['padding']);
         double contentWidth = math.max(
@@ -242,7 +242,7 @@ class TableLayout {
   }
 
   static bool _isBlank(Object? basePdf) =>
-      Template(basePdf: basePdf, schemas: const <List<Schema>>[]).isBlank;
+      RawTemplate(basePdf: basePdf, schemas: const <List<RawSchema>>[]).isBlank;
 
   /// pdfme's `getDynamicHeightsForTable`: the height of each unit of the
   /// table for the page layout. Unit 0 is the head (0 when `showHead` is
@@ -386,7 +386,7 @@ class TableLayout {
   /// `width * headWidthPercentages[i] / 100`. pdfme gives a column
   /// without a percentage no width (NaN), and pdf-lib then fails on it.
   /// This port throws a clear error instead.
-  static List<double> _columnWidths(Schema schema, int count) {
+  static List<double> _columnWidths(RawSchema schema, int count) {
     Object? json = schema['headWidthPercentages'];
     return <double>[
       for (int i = 0; i < count; i++)
@@ -401,7 +401,7 @@ class TableLayout {
   }
 
   /// A `columnStyles` map like `{"alignment": {"0": "right"}}`.
-  static Map<int, Object?> _columnMap(Schema schema, String key) {
+  static Map<int, Object?> _columnMap(RawSchema schema, String key) {
     Object? map = _map(schema['columnStyles'])[key];
     return <int, Object?>{
       if (map is Map)
@@ -421,7 +421,7 @@ class TableLayout {
 /// [value] for the page layout. A part gets the `__splitRange` of its body
 /// rows (unit 0 is the head) and `__isSplit`.
 Future<DynamicLayout> tableDynamicLayout(
-  Schema schema,
+  RawSchema schema,
   String value,
   FontStore fonts,
   Object? basePdf,
@@ -474,7 +474,7 @@ List<List<String>> parseTableBody(String value) {
 }
 
 /// The `{start, end}` of a table part, from its `__splitRange`.
-({int start, int? end})? tableBodyRange(Schema schema) {
+({int start, int? end})? tableBodyRange(RawSchema schema) {
   Object? range = schema['__splitRange'];
   if (range is! Map || range['unit'] != tableBodyUnit) return null;
   Object? start = range['start'];
@@ -486,7 +486,7 @@ List<List<String>> parseTableBody(String value) {
 }
 
 /// The part of [body] this schema draws.
-List<List<String>> tableBodyPart(List<List<String>> body, Schema schema) {
+List<List<String>> tableBodyPart(List<List<String>> body, RawSchema schema) {
   ({int start, int? end})? range = tableBodyRange(schema);
   if (range == null) return body;
   int start = math.min(range.start, body.length);

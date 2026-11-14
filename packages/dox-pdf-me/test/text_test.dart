@@ -3,7 +3,8 @@
 // pdfme's default font, Roboto, which is also our default font.
 import 'dart:typed_data';
 
-import 'package:dox_pdf_me/dox_pdf_me.dart';
+import 'package:dox_pdf_me/dox_pdf_me.dart' hide DynamicFontSize;
+import 'package:dox_pdf_me/src/schema.dart';
 import 'package:dox_pdf_me/src/fonts/font_metrics.dart';
 import 'package:dox_pdf_me/src/text/text_box.dart';
 import 'package:dox_pdf_me/src/text/text_measure.dart';
@@ -153,7 +154,7 @@ void main() {
   group('box area', () {
     test('border and padding are taken off, never below 0', () {
       BoxArea a = BoxArea.of(
-        Schema(<String, dynamic>{
+        RawSchema(<String, dynamic>{
           'width': 50,
           'height': 20,
           'borderWidth': <String, num>{'left': 1, 'right': 2, 'top': 3},
@@ -166,7 +167,7 @@ void main() {
       expect(a.bottomInset, 5);
       expect(
         BoxArea.of(
-          Schema(<String, dynamic>{
+          RawSchema(<String, dynamic>{
             'width': 2,
             'height': 2,
             'padding': <String, num>{'left': 4, 'top': 4},
