@@ -129,6 +129,12 @@ extension PDFDocumentConformance on PDFDocument {
   ///   `/GTS_PDFXVersion`. PDF/X-1a, PDF/X-3 and PDF/A-1 have no object
   ///   streams, so save writes none.
   ///
+  /// The XMP is made again at each save, from the document info. The XMP of
+  /// a loaded file is replaced, so its extra fields (eg. `dc:rights` or
+  /// custom namespaces) are lost. To keep them, read [getXmpMetadata], add
+  /// them to [createXmpMetadata], and pass the result to [setXmpMetadata]:
+  /// save keeps that XMP as it is.
+  ///
   /// The content is up to you: embed all fonts, use the colors and no
   /// transparency where the standard asks. [checkConformance] lists what
   /// is still wrong.

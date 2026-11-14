@@ -391,6 +391,12 @@ Future<void> main() async {
   metadata made from the title, author, dates and other info (PDF/A needs
   them to say the same). PDF/X-1a, PDF/X-3 and PDF/A-1 are PDF 1.4, so
   save writes no object streams for them.
+- The XMP is made again at each save, from the document info. So when
+  you load a file, its old XMP is replaced, and extra fields in it (eg.
+  `dc:rights` or your own namespaces) are lost. To keep them: read
+  `getXmpMetadata()`, add your fields to `createXmpMetadata(standard: ...)`,
+  and pass the result to `setXmpMetadata`. Save then keeps your XMP as it
+  is, so it must still match the document info.
 - PDF/X: `/Trapped` is False when you did not set it, and the
   `/GTS_PDFXVersion` key is set.
 - PDF/A: form field appearances keep only their normal look, and the

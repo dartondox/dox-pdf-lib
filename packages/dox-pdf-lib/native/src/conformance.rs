@@ -227,6 +227,11 @@ pub fn add_intent(pdf: &mut Document, icc: &[u8], intent: &Intent, replace: bool
     if intent.identifier.is_empty() {
         return Err(Error::generic("the output condition identifier must not be empty"));
     }
+    // PDF/X (all parts) takes only output device profiles; a display
+    // profile ('mntr') is allowed for PDF/A only. ISO 15930-4/-6/-7: the
+    // destination profile characterizes a print condition. PDFlib's PDF/X
+    // notes say the same: "PDF/X allows only printer profiles as output
+    // intent" (pdflib.com/pdf-knowledge-base/pdfx-output-intents).
     if intent.subtype == b"GTS_PDFX" && &info.class != b"prtr" {
         return Err(Error::generic(
             "PDF/X needs an output (printer) ICC profile, device class 'prtr'",
@@ -524,7 +529,12 @@ pub fn make_xmp(pdf: &Document, standard: Option<Standard>) -> String {
     if let Some(t) = text(b"Keywords") {
         x.push_str(&format!("<pdf:Keywords>{t}</pdf:Keywords>\n"));
     }
-    if let Some(t) = text(b"Trapped") {
+    // pdf:Trapped is not in the XMP schemas that PDF/A knows: veraPDF
+    // fails it (PDF/A-1 6.7.9, PDF/A-2 and -3 6.6.2.3.1). The Info
+    // /Trapped key alone is fine there. PDF/X keeps it.
+    if let Some(t) = text(b"Trapped")
+        && !standard.is_some_and(|s| s.a_part().is_some())
+    {
         x.push_str(&format!("<pdf:Trapped>{t}</pdf:Trapped>\n"));
     }
     x.push_str("</rdf:Description>\n");
@@ -1432,7 +1442,9 @@ fn check_document(ck: &mut Checker) -> Result<()> {
         ),
         Some(d) => {
             let profile = dict_get(pdf, d, b"DestOutputProfile");
-            if profile.is_none() && (!s.is_x() || !d.has(b"RegistryName")) {
+            // PDF/X-1a and -3 may name a registered condition instead of
+            // a profile; PDF/X-4 always embeds it (ISO 15930-7)
+            if profile.is_none() && (!s.is_x() || s == X4 || !d.has(b"RegistryName")) {
                 ck.add(
                     Kind::OutputIntent,
                     None,
@@ -1922,7 +1934,8 @@ mod tests {
             let x = make_xmp(&d.pdf, s);
             assert!(well_formed(&x), "{x}");
             assert!(x.contains("a&lt;b&gt;&amp;&quot;&apos;c"));
-            assert!(x.contains("<pdf:Trapped>False</pdf:Trapped>"));
+            let pdfa = s.is_some_and(|s| s.a_part().is_some());
+            assert_eq!(x.contains("<pdf:Trapped>False</pdf:Trapped>"), !pdfa);
             assert_eq!(x.contains("xmpMM:InstanceID"), s != Some(A1b));
         }
         assert!(make_xmp(&d.pdf, Some(A3b)).contains("<pdfaid:part>3</pdfaid:part>"));

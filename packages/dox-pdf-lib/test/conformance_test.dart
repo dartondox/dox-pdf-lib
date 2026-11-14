@@ -97,6 +97,13 @@ Future<PDFDocument> _goodDoc(PDFStandard standard) async {
   return doc;
 }
 
+/// Skips the test, or fails it when `REQUIRE_VERAPDF=1` (CI): there,
+/// veraPDF and the profiles must be there.
+void _skipOrFail(String reason) {
+  if (Platform.environment['REQUIRE_VERAPDF'] == '1') fail(reason);
+  markTestSkipped(reason);
+}
+
 /// veraPDF, when it is installed (`verapdf` on the PATH, or `VERAPDF`).
 String? _veraPdf() {
   String? env = Platform.environment['VERAPDF'];
@@ -252,7 +259,7 @@ void main() {
     for (PDFStandard s in PDFStandard.values) {
       test(s.label, () async {
         if (!online) {
-          return markTestSkipped('the ICC profiles could not be loaded');
+          return _skipOrFail('the ICC profiles could not be loaded');
         }
         PDFDocument doc = await _goodDoc(s);
         expect(doc.checkConformance(s), isEmpty);
@@ -312,7 +319,7 @@ void main() {
 
     test('/ID keeps its first part when a file is saved again', () async {
       if (!online) {
-        return markTestSkipped('the ICC profiles could not be loaded');
+        return _skipOrFail('the ICC profiles could not be loaded');
       }
       PDFDocument doc = await _goodDoc(PDFStandard.pdfA2b);
       RegExp id = RegExp(r'/ID ?\[<([0-9A-F]+)> ?<([0-9A-F]+)>\]');
@@ -360,7 +367,7 @@ void main() {
 
     test('a standard font', () async {
       if (!online) {
-        return markTestSkipped('no ICC profiles');
+        return _skipOrFail('no ICC profiles');
       }
       List<ConformanceIssue> list = await issues(PDFStandard.pdfA2b, (
         PDFDocument doc,
@@ -375,7 +382,7 @@ void main() {
 
     test('opacity, but only where it is not allowed', () async {
       if (!online) {
-        return markTestSkipped('no ICC profiles');
+        return _skipOrFail('no ICC profiles');
       }
       Future<void> fade(PDFDocument doc, PDFPage page) async =>
           page.drawRectangle(
@@ -393,7 +400,7 @@ void main() {
 
     test('a PNG with alpha in PDF/A-1', () async {
       if (!online) {
-        return markTestSkipped('no ICC profiles');
+        return _skipOrFail('no ICC profiles');
       }
       List<ConformanceIssue> list = await issues(PDFStandard.pdfA1b, (
         PDFDocument doc,
@@ -406,7 +413,7 @@ void main() {
 
     test('RGB colors in PDF/X-1a, CMYK with an RGB intent', () async {
       if (!online) {
-        return markTestSkipped('no ICC profiles');
+        return _skipOrFail('no ICC profiles');
       }
       expect(
         await issues(
@@ -428,7 +435,7 @@ void main() {
 
     test('no TrimBox, an annotation inside it (PDF/X)', () async {
       if (!online) {
-        return markTestSkipped('no ICC profiles');
+        return _skipOrFail('no ICC profiles');
       }
       List<ConformanceIssue> list = await issues(PDFStandard.pdfX4, (
         PDFDocument doc,
@@ -444,7 +451,7 @@ void main() {
 
     test('attachments by part', () async {
       if (!online) {
-        return markTestSkipped('no ICC profiles');
+        return _skipOrFail('no ICC profiles');
       }
       Future<void> attach(PDFDocument doc, PDFPage page) =>
           doc.attach(Uint8List.fromList(<int>[1, 2, 3]), 'a.bin');
@@ -491,7 +498,39 @@ void main() {
 
   group('veraPDF', () {
     String? vera = _veraPdf();
-    bool required = Platform.environment['REQUIRE_VERAPDF'] == '1';
+
+    /// veraPDF's verdict on [pdf]: starts with PASS or FAIL.
+    String verify(String flavour, Uint8List pdf) {
+      Directory dir = Directory.systemTemp.createTempSync('dox_pdfa_');
+      try {
+        File f = File('${dir.path}/test.pdf')..writeAsBytesSync(pdf);
+        ProcessResult r = Process.runSync(vera!, <String>[
+          '--flavour',
+          flavour,
+          '--format',
+          'text',
+          f.path,
+        ]);
+        return '${r.stdout}${r.stderr}';
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    }
+
+    /// False (and the test is skipped, or fails in CI) without veraPDF or
+    /// the profiles.
+    bool ready() {
+      if (vera == null) {
+        _skipOrFail('veraPDF is not installed');
+        return false;
+      }
+      if (!online) {
+        _skipOrFail('the ICC profiles could not be loaded');
+        return false;
+      }
+      return true;
+    }
+
     for ((PDFStandard, String) c in <(PDFStandard, String)>[
       (PDFStandard.pdfA1b, '1b'),
       (PDFStandard.pdfA2b, '2b'),
@@ -500,37 +539,37 @@ void main() {
       (PDFStandard.pdfA3u, '3u'),
     ]) {
       test(c.$1.label, () async {
-        if (vera == null) {
-          if (required) fail('veraPDF is not installed');
-          markTestSkipped('veraPDF is not installed');
-          return;
-        }
-        if (!online) {
-          return markTestSkipped('no ICC profiles');
-        }
-        Directory dir = Directory.systemTemp.createTempSync('dox_pdfa_');
-        try {
-          for (bool streams in <bool>[true, false]) {
-            PDFDocument doc = await _goodDoc(c.$1);
-            File f = File('${dir.path}/a${c.$2}_$streams.pdf')
-              ..writeAsBytesSync(await doc.save(useObjectStreams: streams));
-            ProcessResult r = Process.runSync(vera, <String>[
-              '--flavour',
-              c.$2,
-              '--format',
-              'text',
-              f.path,
-            ]);
-            expect(
-              r.stdout as String,
-              startsWith('PASS'),
-              reason: '${r.stdout}\n${r.stderr}',
-            );
-          }
-        } finally {
-          dir.deleteSync(recursive: true);
+        if (!ready()) return;
+        for (bool streams in <bool>[true, false]) {
+          PDFDocument doc = await _goodDoc(c.$1);
+          String out = verify(c.$2, await doc.save(useObjectStreams: streams));
+          expect(out, startsWith('PASS'), reason: out);
         }
       });
     }
+
+    test('PDF/A with /Trapped set passes', () async {
+      if (!ready()) return;
+      for ((PDFStandard, String) c in <(PDFStandard, String)>[
+        (PDFStandard.pdfA1b, '1b'),
+        (PDFStandard.pdfA2b, '2b'),
+      ]) {
+        for (Trapped t in Trapped.values) {
+          PDFDocument doc = await _goodDoc(c.$1);
+          doc.setTrapped(t);
+          String out = verify(c.$2, await doc.save());
+          expect(out, startsWith('PASS'), reason: '${t.name}: $out');
+        }
+      }
+    });
+
+    // so we know veraPDF can say FAIL here
+    test('a file that is not PDF/A fails', () async {
+      if (!ready()) return;
+      PDFDocument doc = await PDFDocument.create();
+      doc.addPage().drawText('Helvetica is not embedded');
+      String out = verify('2b', await doc.save());
+      expect(out, startsWith('FAIL'), reason: out);
+    });
   });
 }
