@@ -9,8 +9,9 @@ resolution: workspace
 
 dependencies:
   barcode: ^2.2.9
-  # In this workspace.
-  dox_pdf_lib: ^0.0.1
+  # In this workspace. Not ^0.0.1: in 0.0.x that means <0.0.2, so the next
+  # dox_pdf_lib release would break `dart pub get` here.
+  dox_pdf_lib: '>=0.0.1 <0.1.0'
 
 dev_dependencies:
   lints: ^6.1.0
