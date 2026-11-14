@@ -50,6 +50,7 @@ class BarcodeSymbol {
     required this.height,
     required this.rects,
     this.bars = const <BarcodeRect>[],
+    this.border = const <BarcodeRect>[],
     this.text,
   });
 
@@ -62,6 +63,10 @@ class BarcodeSymbol {
   /// viewer draws thin strokes a bit differently from thin fills, so this
   /// keeps the page look of pdfme.
   final List<BarcodeRect> bars;
+
+  /// Filled rectangles that are always black: the bearer box of ITF-14
+  /// (bwip-js draws it in its `bordercolor`, and pdfme does not set it).
+  final List<BarcodeRect> border;
   final BarcodeTextLine? text;
 }
 

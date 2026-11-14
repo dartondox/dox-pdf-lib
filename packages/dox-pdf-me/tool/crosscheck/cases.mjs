@@ -2,10 +2,12 @@
 // writes them as cases.json for test/crosscheck_test.dart, which draws them
 // with dox_pdf_me.
 //
-// `compare` says how the Dart test compares the pages:
-// - 'pixels': the pages must look the same (a few edge pixels may differ).
-// - 'barcode': like 'pixels', but with a larger tolerance for the human
-//   readable text (OCR-B in pdfme, Helvetica here).
+// The Dart test compares each schema box on its own (its ink box and its
+// pixels, with limits per type), the bars of linear barcodes, and the whole
+// page. `compare` changes that a little:
+// - 'pixels': the default.
+// - 'barcode': the human readable text of linear barcodes is OCR-B in
+//   pdfme and Helvetica here, so more of the page may differ.
 // - 'reencoded': images with an EXIF orientation. pdfme decodes, turns and
 //   encodes them again (JPEG quality 90); we turn them with a transform. The
 //   colors near the edges of the blocks differ a little.
@@ -14,11 +16,8 @@
 //   them with pdftotext). The letters are shaped by other code (fontkit in
 //   pdfme, HarfBuzz rules here): marks sit in other places, and fontkit
 //   does not reorder some Myanmar vowels. So more pixels may differ.
-// - 'pdf417': PDF417 codes. The modules are the same as bwip-js, so only
-//   the edges of the bars may differ (vector here, SVG in pdfme).
-// - 'matrix': 2D codes (QR, Data Matrix, PDF417). The modules can differ
-//   (mask, encoding), so only the symbol box is compared, and the codes are
-//   decoded with zbarimg when it is installed.
+// - 'matrix': 2D codes (QR, Data Matrix, PDF417). With zbarimg installed,
+//   the codes of both sides are decoded and must give the same text.
 
 import { saSentences } from './sa_text.mjs';
 import { fieldCases } from './field_cases.mjs';
@@ -411,7 +410,7 @@ export const cases = [
     'The quick brown fox jumps over the lazy dog. 1234567890123456',
     'https://github.com/dartondox/dox-pdf-lib',
     'Ünïcödé € 日本',
-  ], { compare: 'pdf417' }),
+  ], { compare: 'matrix' }),
   multi,
   basePdf,
   empty,
@@ -430,3 +429,397 @@ cases.push({
 
 // signature, circleMark and multiVariableText (field_cases.mjs)
 cases.push(...fieldCases);
+
+// ---------------------------------------------------------------------
+// Variants of every schema type: tall, wide and tiny boxes, rotation,
+// opacity, colors, alignment, fonts, empty values. The test compares each
+// box on its own (its ink box and its pixels), with limits per type.
+
+/** A case of several pages; each page is [schemas, values]. */
+function pages(name, list, extra = {}) {
+  const ps = list.map(([s, v]) => page(s, v));
+  return {
+    name,
+    compare: 'pixels',
+    template: { basePdf: blank(), schemas: ps.map((p) => p.schemas) },
+    inputs: [Object.assign({}, ...ps.map((p) => p.input))],
+    ...extra,
+  };
+}
+
+const longText = `${latin} ${latin} ${latin}`;
+const variantText = [
+  [
+    [
+      box('text', 5, 5, 12, 4, {}),
+      box('text', 20, 5, 18, 90, { fontSize: 10 }),
+      box('text', 42, 5, 103, 7, { fontSize: 8, alignment: 'center' }),
+      box('text', 42, 15, 45, 30, { rotate: 45, alignment: 'center', verticalAlignment: 'middle' }),
+      box('text', 95, 15, 50, 14, { rotate: 90, fontSize: 9 }),
+      box('text', 95, 32, 50, 14, { rotate: 180, alignment: 'right', backgroundColor: '#e3f2fd' }),
+      box('text', 42, 52, 50, 20, { opacity: 0.3, fontSize: 18, fontColor: '#c62828' }),
+      box('text', 95, 52, 50, 20, { fontColor: '#1565c040', fontSize: 16, verticalAlignment: 'bottom' }),
+      box('text', 42, 76, 50, 19, { characterSpacing: 3, fontSize: 9, lineHeight: 1.5, verticalAlignment: 'middle' }),
+      box('text', 95, 76, 50, 19, { fontName: 'Lato', fontSize: 12, alignment: 'right', verticalAlignment: 'bottom', lineHeight: 0.8 }),
+    ],
+    ['Tiny box overflow', longText, 'A wide and low box', 'Turned 45 degrees', 'Turned 90', 'Upside down',
+      'Opacity 0.3', 'Alpha color', 'Spacing 3 with line height 1.5', 'Lato right\nbottom'],
+  ],
+  [
+    [
+      box('text', 5, 5, 40, 20, { borderColor: '#000000', borderWidth: { top: 3, right: 3, bottom: 3, left: 3 }, padding: { top: 4, right: 4, bottom: 4, left: 4 }, fontSize: 9 }),
+      box('text', 50, 5, 40, 20, { backgroundColor: '#fff3e080', borderColor: '#e65100', borderWidth: { top: 0, right: 0, bottom: 0.5, left: 0 }, verticalAlignment: 'middle', alignment: 'center' }),
+      box('text', 95, 5, 50, 20, { padding: { top: 0, right: 10, bottom: 0, left: 10 }, alignment: 'justify', fontSize: 8 }),
+      box('text', 5, 30, 40, 20, {}),
+      box('text', 50, 30, 40, 20, { backgroundColor: '#ffcdd2' }),
+      box('text', 95, 30, 50, 20, { dynamicFontSize: { min: 4, max: 60, fit: 'horizontal' }, rotate: 90 }),
+      box('text', 5, 55, 40, 40, { dynamicFontSize: { min: 4, max: 60, fit: 'vertical' }, verticalAlignment: 'middle', alignment: 'center' }),
+      box('text', 50, 55, 40, 40, { fontSize: 40, alignment: 'center', verticalAlignment: 'middle' }),
+      box('text', 95, 55, 50, 40, { fontName: 'Lato', underline: true, strikethrough: true, rotate: 180, fontSize: 14 }),
+    ],
+    ['Thick border and padding', 'Bottom border', `${latin} ${latin}`, '', ' ', 'Fit me', 'Fit me vertical', 'Big',
+      'Lato underline and strike'],
+  ],
+];
+
+const variantShapes = [
+  box('line', 5, 5, 40, 0.2, { color: '#000000' }),
+  box('line', 50, 5, 40, 3, { color: '#1565c0' }),
+  box('line', 95, 10, 40, 1, { color: '#2e7d32', rotate: 90 }),
+  box('line', 5, 15, 40, 1, { color: '#000000', rotate: 45 }),
+  box('line', 50, 15, 40, 2, { color: '#d32f2f', rotate: 180, opacity: 0.4 }),
+  box('line', 110, 5, 30, 0.5, { color: '' }),
+  box('rectangle', 5, 30, 20, 30, { color: '#bbdefb', borderColor: '#0d47a1', borderWidth: 3 }),
+  box('rectangle', 30, 30, 30, 10, { color: '#c8e6c9', radius: 20 }),
+  box('rectangle', 30, 45, 30, 15, { color: '', borderColor: '#000000', borderWidth: 0 }),
+  box('rectangle', 65, 30, 30, 15, { color: '#ffe0b2', borderColor: '#e65100', borderWidth: 1, rotate: 90 }),
+  box('rectangle', 100, 30, 40, 15, { color: '#f8bbd0', borderColor: '#880e4f', borderWidth: 2, radius: 4, rotate: 180, opacity: 0.5 }),
+  box('rectangle', 65, 50, 2, 2, { color: '#000000' }),
+  box('rectangle', 75, 50, 20, 10, { color: '#00000000', borderColor: '#ff000080', borderWidth: 1 }),
+  box('ellipse', 5, 65, 20, 30, { color: '#e1bee7', borderColor: '#4a148c', borderWidth: 3 }),
+  box('ellipse', 30, 70, 40, 15, { color: '#b2dfdb', rotate: 90 }),
+  box('ellipse', 75, 65, 30, 20, { borderColor: '#000000', borderWidth: 0.3, rotate: 45, opacity: 0.5 }),
+  box('ellipse', 110, 65, 35, 30, { color: '#fff59d80' }),
+  box('ellipse', 110, 50, 3, 3, { color: '#000000' }),
+];
+
+const fitSpots = ['left top', 'center top', 'right top', 'left center', 'center center', 'right center', 'left bottom', 'center bottom', 'right bottom'];
+const variantImages = [
+  [
+    [
+      ...fitSpots.map((p, i) => box('image', 5 + (i % 3) * 25, 5 + Math.floor(i / 3) * 12, 22, 9, { objectPosition: p })),
+      ...fitSpots.map((p, i) => box('image', 80 + (i % 3) * 22, 5 + Math.floor(i / 3) * 30, 10, 27, { objectPosition: p })),
+      box('image', 5, 45, 30, 20, { objectFit: 'cover' }),
+      box('image', 40, 45, 10, 40, { objectFit: 'cover' }),
+      box('image', 5, 70, 30, 20, { objectFit: 'cover', rotate: 90 }),
+      box('image', 55, 50, 15, 3, {}),
+    ],
+    [...fitSpots.map(() => png), ...fitSpots.map(() => jpg), jpg, png, png, png],
+  ],
+  [
+    [
+      box('image', 5, 5, 40, 25, { rotate: 90 }),
+      box('image', 55, 5, 40, 25, { rotate: 180, objectPosition: 'left top' }),
+      box('image', 105, 5, 40, 25, { rotate: 45, objectFit: 'cover' }),
+      box('image', 5, 50, 40, 40, { opacity: 0.3 }),
+      box('image', 55, 50, 20, 40, { rotate: 270, objectPosition: 'right bottom' }),
+      box('image', 85, 50, 3, 3, {}),
+      box('image', 95, 50, 50, 40, { objectFit: 'cover', objectPosition: 'left top', rotate: 180 }),
+    ],
+    [jpg, png, jpg, png, jpg, png, png],
+  ],
+];
+
+const svgNoViewBox =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20">' +
+  '<rect x="0" y="0" width="40" height="20" fill="#90caf9"/><circle cx="10" cy="10" r="8" fill="#0d47a1"/></svg>';
+const svgAspect = (par) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20" preserveAspectRatio="${par}">` +
+  '<rect x="0" y="0" width="40" height="20" fill="#ffcc80"/><circle cx="10" cy="10" r="8" fill="#e65100"/>' +
+  '<rect x="25" y="2" width="12" height="16" rx="4" fill="#4e342e"/></svg>';
+const svgStroke =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-10 -10 120 120">' +
+  '<path d="M0 0 C 50 100, 50 -50, 100 50" fill="none" stroke="#1b5e20" stroke-width="6" stroke-dasharray="12 6"/>' +
+  '<polyline points="0,100 50,80 100,100" fill="none" stroke="#000" stroke-width="4"/>' +
+  '<g opacity="0.5" transform="scale(0.5) translate(20 120)"><rect width="60" height="40" fill="#c62828"/></g>' +
+  '<line x1="0" y1="100" x2="100" y2="0" stroke="rgb(30,60,200)" stroke-width="3" stroke-linecap="square"/>' +
+  '<circle cx="80" cy="80" r="15" fill="#ffeb3b" stroke="#f57f17" stroke-width="2" fill-opacity="0.7"/></svg>';
+const variantSvgs = [
+  [
+    [
+      box('svg', 5, 5, 40, 20),
+      box('svg', 50, 5, 60, 20),
+      box('svg', 115, 5, 30, 40),
+      box('svg', 5, 30, 60, 20),
+      box('svg', 70, 30, 40, 40),
+      box('svg', 5, 55, 60, 20),
+      box('svg', 5, 80, 30, 15),
+      box('svg', 115, 50, 30, 45),
+      box('svg', 40, 78, 60, 17),
+    ],
+    [svgNoViewBox, svgNoViewBox, svgAspect('xMidYMid meet'), svgAspect('xMidYMid meet'), svgStroke,
+      svgAspect('none'), svgAspect('xMinYMin meet'), svgAspect('xMaxYMax meet'), svgAspect('xMidYMid slice')],
+  ],
+  [
+    [
+      box('svg', 5, 5, 40, 30, { rotate: 90 }),
+      box('svg', 55, 5, 40, 30, { rotate: 180 }),
+      box('svg', 105, 5, 40, 30, { rotate: 45 }),
+      box('svg', 5, 55, 40, 30, { opacity: 0.3 }),
+      box('svg', 55, 55, 5, 5),
+      box('svg', 70, 55, 30, 30),
+    ],
+    [svgSample, svgSample, svgStroke, svgSample, svgSample, '<svg>not closed'],
+  ],
+];
+
+const bars1d = [
+  ['ean13', '4006381333931'], ['ean8', '96385074'], ['upca', '03600029145'], ['upce', '01234565'],
+  ['code39', 'AB-12.$/+%'], ['code128', 'Abc 123 xyz'], ['nw7', 'C12:34$5D'], ['itf14', '1540014128876'],
+  ['japanpost', '1350023-2-1-1'],
+];
+const variant1d = bars1d.map(([type, value]) => [
+  [
+    box(type, 5, 5, 20, 40, {}),
+    box(type, 30, 5, 115, 12, {}),
+    box(type, 30, 20, 20, 6, {}),
+    box(type, 55, 20, 40, 20, { includetext: false }),
+    box(type, 100, 22, 40, 18, { rotate: 180, barColor: '#1565c0', textColor: '#d32f2f', backgroundColor: '#fff9c4' }),
+    box(type, 5, 55, 40, 20, { rotate: 90 }),
+    box(type, 50, 50, 40, 20, { rotate: 45, opacity: 0.5 }),
+    box(type, 100, 50, 40, 20, { barColor: '#00000080', backgroundColor: '#90caf980' }),
+    box(type, 50, 78, 40, 18, { backgroundColor: '', textColor: '#2e7d32' }),
+    box(type, 100, 78, 40, 18, { barColor: '#ff0000' }),
+  ],
+  [value, value, value, value, value, value, value, value, value, 'bad value!'],
+]);
+
+const variant2d = [
+  [
+    [
+      box('qrcode', 5, 5, 50, 20, {}),
+      box('qrcode', 60, 5, 15, 45, {}),
+      box('qrcode', 80, 5, 30, 30, { rotate: 90, barColor: '#1565c0', backgroundColor: '#fff9c4' }),
+      box('qrcode', 115, 5, 30, 30, { rotate: 45, opacity: 0.5 }),
+      box('qrcode', 5, 30, 5, 5, {}),
+      box('qrcode', 15, 30, 40, 40, { barColor: '#00000080', backgroundColor: '#ff000040' }),
+      box('gs1datamatrix', 80, 40, 60, 20, {}),
+      box('gs1datamatrix', 60, 55, 15, 40, { rotate: 180 }),
+      box('gs1datamatrix', 80, 65, 25, 25, { rotate: 90, barColor: '#2e7d32' }),
+      box('pdf417', 5, 75, 50, 20, { rotate: 180, opacity: 0.6 }),
+      box('pdf417', 110, 65, 35, 30, { rotate: 45 }),
+    ],
+    ['https://pdfme.com', 'tall', 'turned 90', 'turned 45', 'tiny', 'alpha colors', '(01)09521234543213',
+      '(01)04912345123459', '(01)09521234543213', 'PDF417 turned 180', 'PDF417 45'],
+  ],
+];
+
+const variantDates = [
+  [
+    [
+      box('date', 5, 5, 45, 10, { locale: 'de' }),
+      box('date', 55, 5, 45, 10, { format: 'EEEE d MMMM yyyy', fontSize: 9 }),
+      box('date', 105, 5, 40, 10, { locale: 'ja', format: 'yyyy年M月d日', fontName: 'NotoSansJP' }),
+      box('dateTime', 5, 20, 45, 10, { locale: 'en' }),
+      box('dateTime', 55, 20, 45, 10, { locale: 'zh' }),
+      box('time', 105, 20, 40, 10, { format: 'h:mm a' }),
+      box('date', 5, 35, 45, 20, { fontSize: 20, alignment: 'center', backgroundColor: '#e8f5e9', characterSpacing: 2 }),
+      box('date', 55, 35, 45, 20, { rotate: 90, fontColor: '#c62828' }),
+      box('dateTime', 105, 35, 40, 20, { rotate: 180, alignment: 'right', fontName: 'Lato' }),
+      box('date', 5, 60, 45, 6, { fontSize: 8, format: 'MMM do, yy' }),
+      box('time', 55, 60, 45, 10, { format: 'HH:mm:ss', opacity: 0.4 }),
+      box('date', 105, 60, 40, 10, { format: '', locale: 'fr' }),
+      box('date', 5, 75, 45, 10, { format: 'PPP' }),
+      box('time', 55, 75, 45, 10, {}),
+      box('dateTime', 105, 75, 40, 10, { format: "yyyy-MM-dd'T'HH:mm" }),
+    ],
+    ['2024/05/07', '2024/02/29', '2025/01/09', '2024/05/07 18:30', '2024/12/31 23:59', '07:05',
+      '2024/05/07', '2024/05/07', '2024/05/07 00:00', '2024/03/01', '13:45', '2024/05/07',
+      '2024/05/07', '', '2024/05/07 09:08'],
+  ],
+];
+
+const variantChecks = [
+  [
+    [
+      box('checkbox', 5, 5, 20, 10, { color: '#000000' }),
+      box('checkbox', 30, 5, 10, 20, { color: '#000000' }),
+      box('checkbox', 45, 5, 3, 3, { color: '#000000' }),
+      box('checkbox', 55, 5, 12, 12, { color: '#1565c0', rotate: 45 }),
+      box('checkbox', 75, 5, 12, 12, { color: '#000000', rotate: 90, opacity: 0.3 }),
+      box('checkbox', 95, 5, 12, 12, {}),
+      box('checkbox', 115, 5, 20, 10, { color: '#d32f2f' }),
+      box('radioGroup', 5, 35, 20, 10, { color: '#000000' }),
+      box('radioGroup', 30, 35, 10, 20, { color: '#000000' }),
+      box('radioGroup', 45, 35, 3, 3, { color: '#000000' }),
+      box('radioGroup', 55, 35, 12, 12, { color: '#6a1b9a', rotate: 30 }),
+      box('radioGroup', 75, 35, 12, 12, { color: '#00000080' }),
+      box('radioGroup', 95, 35, 12, 12, {}),
+      box('radioGroup', 115, 35, 20, 10, { color: '#2e7d32' }),
+      box('checkbox', 5, 65, 30, 30, { color: '#000000' }),
+      box('radioGroup', 40, 65, 30, 30, { color: '#000000' }),
+    ],
+    ['true', 'true', 'true', 'true', 'true', 'true', 'false', 'true', 'true', 'true', 'true', 'true', 'true', 'TRUE', 'true', 'true'],
+  ],
+];
+
+const variantSelect = [
+  [
+    [
+      box('select', 5, 5, 45, 10, { options: ['A', 'B'] }),
+      box('select', 55, 5, 45, 15, { options: ['A', 'B'], alignment: 'center', verticalAlignment: 'middle', backgroundColor: '#e1f5fe' }),
+      box('select', 105, 5, 40, 20, { options: ['A'], alignment: 'right', verticalAlignment: 'bottom', fontName: 'Lato', fontSize: 16 }),
+      box('select', 5, 30, 45, 20, { options: ['A'], rotate: 90, fontColor: '#2e7d32' }),
+      box('select', 55, 30, 45, 10, { options: ['A'], opacity: 0.4, characterSpacing: 2 }),
+      box('select', 105, 30, 40, 10, { options: ['A'] }),
+    ],
+    ['Option A', 'Option B centered', 'Right', 'Turned', 'Faint', ''],
+  ],
+];
+
+const variantText2 = [
+  [
+    [
+      box('text', 5, 5, 45, 25, { rotate: 45, backgroundColor: '#ffe0b2', borderColor: '#e65100', borderWidth: { top: 1, right: 2, bottom: 1, left: 2 }, padding: { top: 2, right: 2, bottom: 2, left: 2 }, fontSize: 9 }),
+      box('text', 55, 5, 40, 25, { verticalAlignment: 'middle', alignment: 'right', characterSpacing: 1, fontSize: 9 }),
+      box('text', 100, 5, 45, 25, { lineHeight: 0, fontSize: 10 }),
+      box('text', 5, 35, 45, 25, { dynamicFontSize: { min: 3, max: 30, fit: 'horizontal' }, verticalAlignment: 'bottom' }),
+      box('text', 55, 35, 40, 25, { fontName: 'NotoSansJP', rotate: 90, fontSize: 10, alignment: 'center' }),
+      box('text', 100, 35, 45, 25, { fontSize: 4, alignment: 'justify' }),
+      box('text', 5, 65, 45, 30, { fontColor: '', underline: true, alignment: 'center', lineHeight: 2 }),
+      box('text', 55, 65, 40, 30, { strikethrough: true, rotate: 270, fontSize: 11, opacity: 0.7, backgroundColor: '#c5cae980' }),
+      box('text', 100, 65, 45, 30, { dynamicFontSize: { min: 8, max: 12, fit: 'vertical' }, alignment: 'justify', characterSpacing: 0.4 }),
+    ],
+    ['Rotated with border, padding and background', 'Middle right\nwith spacing', 'Line height zero\nsecond\nthird',
+      'Short\nAnd a much longer line', '日本語のテキスト。折り返し。', longText,
+      'Default color\nlines', 'Strike turned 270 and faint', longText],
+  ],
+];
+
+const variantShapes2 = [
+  box('rectangle', 5, 5, 40, 20, { color: '#b3e5fc', borderColor: '#01579b', borderWidth: 2, radius: 6, rotate: 45 }),
+  box('rectangle', 55, 5, 30, 20, { color: '#dcedc8', borderWidth: 2 }),
+  box('rectangle', 95, 5, 20, 20, { borderColor: '#000000', borderWidth: 15 }),
+  box('rectangle', 120, 5, 25, 20, { color: '#ffcdd2', borderColor: '#b71c1c80', borderWidth: 3, opacity: 0.5 }),
+  box('ellipse', 5, 40, 30, 20, { color: '#d1c4e9', borderColor: '#311b92', borderWidth: 12 }),
+  box('ellipse', 45, 35, 40, 25, { color: '#fff9c4', borderColor: '#f57f17', borderWidth: 1.5, rotate: 135 }),
+  box('ellipse', 95, 35, 50, 8, { color: '#b2ebf2', rotate: 180 }),
+  box('line', 95, 50, 50, 4, { color: '#4caf5080', opacity: 0.5 }),
+  box('line', 5, 70, 60, 0.3, { color: '#000000', rotate: 30 }),
+  box('line', 75, 65, 0.5, 30, { color: '#000000' }),
+  box('line', 85, 75, 60, 10, { color: '#90a4ae', rotate: 10 }),
+];
+
+const variant1d2 = [
+  [
+    [
+      box('ean13', 5, 5, 40, 20, {}),
+      box('ean8', 50, 5, 40, 20, {}),
+      box('upca', 95, 5, 40, 20, {}),
+      box('upce', 5, 30, 40, 20, {}),
+      box('itf14', 50, 30, 40, 20, {}),
+      box('japanpost', 95, 30, 50, 10, { includetext: false }),
+      box('japanpost', 95, 43, 50, 12, { barColor: '#1565c0', textColor: '#d32f2f', rotate: 180 }),
+      box('code128', 5, 55, 60, 20, {}),
+      box('code128', 70, 60, 75, 15, {}),
+      box('code39', 5, 80, 60, 15, { opacity: 0.4, backgroundColor: '#ffeb3b' }),
+      box('nw7', 70, 80, 75, 15, { textColor: '#00000080', barColor: '#2e7d3280' }),
+    ],
+    ['490123456789', '1234567', '01234567890', '0123456', '1234567890123', '1000013-ABC-12', '1000013-ABC-12',
+      '[]{}!@#$%^&*()_+=~`|\;:,.<>?/"\'', '0123456789012345678901234567', 'CODE-39 $/+%.', 'A1234567890D'],
+  ],
+];
+
+const variant2d2 = [
+  [
+    [
+      box('qrcode', 5, 5, 40, 40, {}),
+      box('qrcode', 50, 5, 40, 40, { backgroundColor: '' }),
+      box('pdf417', 95, 5, 50, 40, {}),
+      box('pdf417', 5, 50, 140, 15, {}),
+      box('pdf417', 5, 70, 10, 25, {}),
+      box('gs1datamatrix', 20, 70, 20, 25, { backgroundColor: '#e0e0e0' }),
+      box('gs1datamatrix', 45, 70, 20, 20, {}),
+      box('pdf417', 70, 70, 75, 25, { barColor: '#00000080', opacity: 0.7 }),
+    ],
+    ['日本語のQRコード — UTF-8 ✓', 'x'.repeat(300), 'a'.repeat(400), '1234567890'.repeat(12),
+      'short', '(01)95012345678903(3103)000123', '(01)00012345678905(10)ABC123', '日本語 PDF417 ✓ €'],
+  ],
+];
+
+const variantColors = [
+  box('text', 5, 5, 45, 10, { fontColor: '#f00', backgroundColor: '#ccf' }),
+  box('text', 55, 5, 45, 10, { fontColor: '#00f8', backgroundColor: '#0f04' }),
+  box('text', 105, 5, 40, 10, { fontColor: '#123456', backgroundColor: '#fff0' }),
+  box('rectangle', 5, 20, 30, 15, { color: '#f80', borderColor: '#08f', borderWidth: 1 }),
+  box('ellipse', 40, 20, 30, 15, { color: '#0f08', borderColor: '#f008', borderWidth: 1 }),
+  box('line', 75, 25, 30, 2, { color: '#f0f' }),
+  box('checkbox', 110, 20, 12, 12, { color: '#f00' }),
+  box('radioGroup', 128, 20, 12, 12, { color: '#00f8' }),
+  box('ean13', 5, 40, 40, 20, { barColor: '#f00', textColor: '#00f', backgroundColor: 'ff0' }),
+  box('code128', 50, 40, 45, 20, { barColor: '#0000ff80', backgroundColor: 'ffff0080' }),
+  box('qrcode', 100, 40, 20, 20, { barColor: '#080', backgroundColor: '#ffeeee' }),
+  box('pdf417', 125, 40, 20, 20, { barColor: '#008', backgroundColor: '#0000' }),
+  box('date', 5, 65, 45, 10, { fontColor: '#a0a', backgroundColor: '#ffe' }),
+  box('select', 55, 65, 45, 10, { options: ['A'], fontColor: '#0a0a', backgroundColor: '#eee' }),
+  box('image', 105, 65, 40, 30, {}),
+  box('svg', 5, 80, 40, 15, {}),
+];
+
+const a4 = (() => {
+  const s = [
+    box('text', 20, 20, 170, 20, { fontSize: 24, alignment: 'center' }),
+    box('qrcode', 20, 50, 40, 40, {}),
+    box('image', 70, 50, 120, 80, { objectFit: 'cover' }),
+    box('rectangle', 20, 140, 170, 100, { color: '', borderColor: '#000000', borderWidth: 0.5, radius: 3 }),
+    box('text', 25, 145, 160, 90, { fontSize: 12, lineHeight: 1.4, alignment: 'justify' }),
+    box('line', 20, 270, 170, 0.5, { color: '#000000' }),
+    box('ean13', 140, 275, 50, 18, {}),
+  ];
+  return {
+    name: 'variant-page-a4',
+    compare: 'pixels',
+    template: { basePdf: { width: 210, height: 297, padding: [10, 10, 10, 10] }, schemas: [s] },
+    inputs: [
+      { [s[0].name]: 'Invoice', [s[1].name]: 'https://pdfme.com', [s[2].name]: { $file: 'image.jpg' }, [s[4].name]: `${latin}\n\n${longText}`, [s[6].name]: '4006381333931' },
+      { [s[0].name]: 'Second', [s[1].name]: 'x', [s[2].name]: png, [s[4].name]: 'short', [s[6].name]: '' },
+    ],
+  };
+})();
+
+const landscape = (() => {
+  const statics = [
+    { name: 'stamp', type: 'text', position: { x: 200, y: 5 }, width: 90, height: 10, readOnly: true, content: 'Page {currentPage}/{totalPages}', alignment: 'right', fontSize: 10 },
+    { name: 'frame', type: 'rectangle', position: { x: 5, y: 5 }, width: 287, height: 200, color: '', borderColor: '#999999', borderWidth: 0.4, readOnly: true },
+  ];
+  const s = [
+    box('text', 20, 30, 250, 30, { fontSize: 30, verticalAlignment: 'middle', alignment: 'center', rotate: 180 }),
+    box('svg', 20, 70, 100, 60, { rotate: 90 }),
+    box('pdf417', 150, 80, 120, 50, {}),
+  ];
+  return {
+    name: 'variant-page-landscape',
+    compare: 'pixels',
+    template: { basePdf: { width: 297, height: 210, padding: [0, 0, 0, 0], staticSchema: statics }, schemas: [s, s.slice(0, 1)] },
+    inputs: [{ [s[0].name]: 'Landscape upside down', [s[1].name]: svgSample, [s[2].name]: 'Landscape PDF417' }],
+  };
+})();
+
+cases.push(
+  pages('variant-text', variantText, { options: { font: fonts } }),
+  single('variant-shapes', variantShapes, []),
+  pages('variant-image', variantImages),
+  pages('variant-svg', variantSvgs),
+  pages('variant-1d', variant1d, { compare: 'barcode' }),
+  pages('variant-2d', variant2d, { compare: 'matrix' }),
+  pages('variant-date', variantDates, { options: { font: fonts } }),
+  pages('variant-check', variantChecks),
+  pages('variant-select', variantSelect, { options: { font: fonts } }),
+  pages('variant-text-2', variantText2, { options: { font: fonts } }),
+  single('variant-shapes-2', variantShapes2, []),
+  pages('variant-1d-2', variant1d2, { compare: 'barcode' }),
+  pages('variant-2d-2', variant2d2, { compare: 'matrix' }),
+  single('variant-colors', variantColors, ['3 digit', '4 digit', 'transparent bg', '', '', '', 'true', 'true', '4006381333931', 'Alpha', 'qr', 'pdf', '2024/05/07', 'A', { $file: 'image.png' }, svgSample]),
+  a4,
+  landscape,
+);

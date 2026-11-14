@@ -45,9 +45,15 @@ The paths are in `packages/dox-pdf-me`.
 - Crosscheck with pdfme: run `npm ci` in `tool/crosscheck` (Node.js), and
   install pdftoppm (poppler-utils). `test/crosscheck_test.dart` renders the
   cases of `tool/crosscheck/cases.mjs` with pdfme and with dox_pdf_me, and
-  compares the pages pixel by pixel. With `zbarimg` (zbar-tools) it also
-  decodes the 2D codes. Without node_modules the test is skipped. CI always
-  runs it. Add a case there for every new feature.
+  compares each schema box on its own: the ink box (place and size) and the
+  pixels, with tight limits per type, and the bars of linear barcodes. It
+  writes all numbers to `.dart_tool/crosscheck/report.txt`. With `zbarimg`
+  (zbar-tools) it also decodes the 2D codes. Without node_modules the test
+  is skipped. CI always runs it. Add a case there for every new feature.
+- Barcodes: the 2D codes and Code 128 are ports of the BWIPP encoders
+  (`lib/src/barcodes/`). `test/fixtures/barcodes/*_bwip.json` hold the
+  modules bwip-js 4.11.4 makes (with `bwipjs.raw`); `test/barcode_test.dart`
+  compares every module.
 - Thai, Lao, Khmer and Myanmar word breaks: `test/fixtures/sa_word_breaks.json`
   holds pdfme's breaks for the sentences of `tool/crosscheck/sa_text.mjs`.
   Make it again with `node tool/crosscheck/word_breaks.mjs

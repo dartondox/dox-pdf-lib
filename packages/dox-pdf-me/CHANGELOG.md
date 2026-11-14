@@ -10,6 +10,24 @@
   (BWIPP) encoder makes the symbol.
 - 2D codes (QR code, Data Matrix, PDF417) put their module edges on the
   same grid as bwip-js, so small codes look the same as in pdfme.
+- QR codes have the same modules as in pdfme. bwip-js raises the error
+  correction level when the data still fits the same size, picks the mask
+  with its own scores and mixes number, letter, byte and kanji segments.
+  The `barcode` package did not, so the codes looked different. Now a port
+  of the bwip-js (BWIPP) encoder makes the symbol.
+- GS1 Data Matrix has the same modules and size as in pdfme. Letters now
+  use C40, Text, X12 and EDIFACT like bwip-js, so a value with many letters
+  is no longer one size bigger.
+- Code 128 has the same bars as in pdfme. The `barcode` package started
+  some texts (like `HELLO` or `12345`) in another code set. Text with
+  letters like `é` works now.
+- The bearer box of ITF-14 is black, like in pdfme. It had the bar color.
+- Date formats: all date-fns tokens work, like `do` (`7th`), `PPP` (`May
+  7th, 2024`), `Q`, `w` and `B`. Other tokens made the format fall back to
+  the default format. `iiii` gives the full day name (it gave `Tue`).
+- The crosscheck with pdfme compares every schema box on its own: the ink
+  box (place and size) and the pixels, with tight limits per type, and the
+  bars of linear barcodes. It has many new variants of every type.
 
 ## 0.0.1
 

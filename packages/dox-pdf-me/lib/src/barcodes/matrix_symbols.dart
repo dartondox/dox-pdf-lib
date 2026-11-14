@@ -1,9 +1,13 @@
+import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:barcode/barcode.dart';
 
 import 'barcode_symbol.dart';
+import 'datamatrix_encoder.dart';
 import 'pdf417_encoder.dart';
+import 'qr_encoder.dart';
 
 /// A 2D barcode: its module grid and the size bwip-js gives it.
 class MatrixSymbol {
@@ -82,29 +86,32 @@ class MatrixSymbolBuilder {
     }
   }
 
-  /// QR code with error correction level M, like bwip-js.
-  static MatrixSymbol qrCode(String value) => MatrixSymbol(
-    readGrid(
-      Barcode.qrCode(errorCorrectLevel: BarcodeQRCorrectionLevel.medium)
-          .make(value, width: 1000, height: 1000),
-    ),
-  );
+  /// QR code with our port of the BWIPP encoder, so the modules are the
+  /// same as in bwip-js. Null when the data is too long.
+  static MatrixSymbol? qrCode(String value) {
+    ModuleGrid? grid = QrEncoder.encode(value);
+    return grid == null ? null : MatrixSymbol(grid);
+  }
 
   /// GS1 Data Matrix: FNC1 first, then the element string without the
   /// parentheses, and FNC1 after each field of variable length.
   static MatrixSymbol? gs1DataMatrix(String value) {
     List<(String, String)>? fields = parseGs1(value);
     if (fields == null) return null;
-    DataMatrixEncoder encoder = DataMatrixEncoder()..fnc1();
+    List<int> msg = <int>[DataMatrixCodewords.fnc1];
     for (int i = 0; i < fields.length; i++) {
       String ai = fields[i].$1;
-      encoder.ascii(ai + fields[i].$2);
-      if (i < fields.length - 1 && !_fixedLength(ai)) encoder.fnc1();
+      msg.addAll(utf8.encode(ai + fields[i].$2));
+      if (i < fields.length - 1 && !_fixedLength(ai)) {
+        msg.add(DataMatrixCodewords.fnc1);
+      }
     }
+    List<int>? cws = DataMatrixCodewords.codewords(msg);
+    if (cws == null) return null;
     return MatrixSymbol(
       readGrid(
         Barcode.dataMatrix().makeBytes(
-          encoder.toBytes(),
+          Uint8List.fromList(cws),
           width: 1000,
           height: 1000,
         ),

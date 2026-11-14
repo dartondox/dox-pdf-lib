@@ -5,6 +5,7 @@ import 'package:barcode/barcode.dart';
 import 'barcode_symbol.dart';
 import 'barcode_validator.dart';
 import 'bwip_raster.dart';
+import 'code128_encoder.dart';
 import 'japan_post.dart';
 
 /// A bar or a space of a linear barcode, in modules.
@@ -44,10 +45,7 @@ class LinearSymbolBuilder {
           moduleRuns(Barcode.code39(), value, wideToThree: true),
           '*$value*',
         ),
-        'code128' => l.runs(
-          moduleRuns(Barcode.code128(), value),
-          _printable(value),
-        ),
+        'code128' => _code128(l, value),
         'nw7' => _nw7(l, value),
         'itf14' => _itf14(l, value),
         'japanpost' => _japanPost(l, value),
@@ -106,6 +104,20 @@ class LinearSymbolBuilder {
       start += length;
     }
     return runs;
+  }
+
+  /// Code 128 with our port of the BWIPP encoder, so the code sets are the
+  /// same as in bwip-js.
+  static BarcodeSymbol? _code128(_Layout l, String value) {
+    List<int>? widths = Code128Encoder.widths(value);
+    if (widths == null) return null;
+    List<ModuleRun> runs = <ModuleRun>[];
+    int start = 0;
+    for (int i = 0; i < widths.length; i++) {
+      runs.add((start: start, length: widths[i], dark: i.isEven));
+      start += widths[i];
+    }
+    return l.runs(runs, _printable(value));
   }
 
   /// EAN and UPC: with text, the guard bars go 5 pt lower.

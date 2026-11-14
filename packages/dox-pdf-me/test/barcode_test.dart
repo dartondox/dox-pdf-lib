@@ -7,6 +7,7 @@ import 'package:dox_pdf_me/src/barcodes/barcode_fit_layout.dart';
 import 'package:dox_pdf_me/src/barcodes/barcode_painter.dart';
 import 'package:dox_pdf_me/src/barcodes/barcode_plugin.dart';
 import 'package:dox_pdf_me/src/barcodes/barcode_symbol.dart';
+import 'package:dox_pdf_me/src/barcodes/code128_encoder.dart';
 import 'package:dox_pdf_me/src/barcodes/japan_post.dart';
 import 'package:dox_pdf_me/src/barcodes/linear_symbols.dart';
 import 'package:dox_pdf_me/src/barcodes/matrix_symbols.dart';
@@ -301,29 +302,25 @@ void main() {
       }
     });
     test('pdf417: every module is the same as bwip-js (20 inputs)', () {
-      // made with bwip-js 4.11.4 (`bwipjs.raw`): per symbol row, the
-      // modules as a hex number (1 is dark)
+      _expectGolden('pdf417', 'pdf417_bwip.json', 20, rowHeight: 3);
+    });
+    test('code128: every bar is the same as bwip-js (27 inputs)', () {
+      // made with bwip-js 4.11.4 (`bwipjs.raw`): the bar and space widths
       Map<String, dynamic> golden = jsonDecode(
-        File('test/fixtures/barcodes/pdf417_bwip.json').readAsStringSync(),
+        File('test/fixtures/barcodes/code128_bwip.json').readAsStringSync(),
       ) as Map<String, dynamic>;
-      expect(golden, hasLength(20));
-      golden.forEach((String input, dynamic g) {
-        Map<String, dynamic> want = g as Map<String, dynamic>;
-        MatrixSymbol m = MatrixSymbolBuilder.build('pdf417', input)!;
-        String name = input.length > 20 ? input.substring(0, 20) : input;
-        expect(m.grid.columns, want['width'], reason: name);
-        List<String> rows = <String>[
-          for (int r = 0; r < m.grid.rows; r++)
-            BigInt.parse(
-              <String>[
-                for (int x = 0; x < m.grid.columns; x++)
-                  m.grid.isDark(x, r) ? '1' : '0',
-              ].join(),
-              radix: 2,
-            ).toRadixString(16),
-        ];
-        expect(rows, want['rows'], reason: name);
+      expect(golden, hasLength(27));
+      golden.forEach((String input, dynamic widths) {
+        expect(Code128Encoder.widths(input)!.join(), widths, reason: input);
       });
+    });
+    test('gs1datamatrix: every module is the same as bwip-js (26 inputs)', () {
+      // C40, Text, X12 and EDIFACT runs and the square size
+      _expectGolden('gs1datamatrix', 'gs1datamatrix_bwip.json', 26);
+    });
+    test('qrcode: every module is the same as bwip-js (28 inputs)', () {
+      // segments, version, raised error correction level and mask
+      _expectGolden('qrcode', 'qrcode_bwip.json', 28);
     });
     test('pdf417: too much data gives null', () {
       expect(MatrixSymbolBuilder.build('pdf417', '\u0001' * 2000), isNull);
@@ -493,13 +490,7 @@ void main() {
 void _compareBars(BarcodeSymbol s, Map<String, dynamic> g, String type) {
   List<List<double>> golden = _bars(g);
   List<BarcodeRect> bars = s.bars;
-  expect(s.rects, hasLength(type == 'itf14' ? 4 : 0));
-  if (type == 'code128' && g['value'] == 'ABC-123') {
-    // BWIPP starts in code set B, the barcode package in code set A: the
-    // same width and data, other bars.
-    expect(s.width, g['vw']);
-    return;
-  }
+  expect(s.border, hasLength(type == 'itf14' ? 4 : 0));
   expect(s.width, g['vw'], reason: 'viewBox width');
   expect(s.height, g['vh'], reason: 'viewBox height');
   expect(bars, hasLength(golden.length));
@@ -514,16 +505,16 @@ void _compareBars(BarcodeSymbol s, Map<String, dynamic> g, String type) {
         .allMatches(g['frame'] as String)
         .map((RegExpMatch m) => double.parse(m[0]!))
         .toList();
-    BarcodeRect top = s.rects[0];
-    BarcodeRect bottom = s.rects[1];
-    BarcodeRect left = s.rects[2];
+    BarcodeRect top = s.border[0];
+    BarcodeRect bottom = s.border[1];
+    BarcodeRect left = s.border[2];
     expect(<double>[top.x, top.y, top.x + top.width], <double>[0, 0, n[6]]);
     expect(bottom.y + bottom.height, n[3]);
     expect(
       <double>[left.x + left.width, top.y + top.height],
       <double>[n[8], n[9]],
     );
-    expect(<double>[bottom.y, s.rects.last.x], <double>[n[13], n[10]]);
+    expect(<double>[bottom.y, s.border.last.x], <double>[n[13], n[10]]);
   }
 }
 
@@ -576,4 +567,32 @@ void _expectDataMatrixFinder(ModuleGrid g) {
     expect(g.isDark(i, 0), i.isEven, reason: 'top timing');
     expect(g.isDark(g.columns - 1, i), i.isOdd, reason: 'right timing');
   }
+}
+
+/// Compares the 2D symbols of [type] with a bwip-js 4.11.4 golden file
+/// (made with `bwipjs.raw`): per symbol row (of [rowHeight] modules), the
+/// modules as a hex number (1 is dark).
+void _expectGolden(String type, String file, int count, {int rowHeight = 1}) {
+  Map<String, dynamic> golden = jsonDecode(
+    File('test/fixtures/barcodes/$file').readAsStringSync(),
+  ) as Map<String, dynamic>;
+  expect(golden, hasLength(count));
+  golden.forEach((String input, dynamic g) {
+    Map<String, dynamic> want = g as Map<String, dynamic>;
+    MatrixSymbol m = MatrixSymbolBuilder.build(type, input)!;
+    String name = input.length > 20 ? input.substring(0, 20) : input;
+    expect(m.grid.columns, want['width'], reason: name);
+    expect(m.rowHeight, rowHeight);
+    List<String> rows = <String>[
+      for (int r = 0; r < m.grid.rows; r++)
+        BigInt.parse(
+          <String>[
+            for (int x = 0; x < m.grid.columns; x++)
+              m.grid.isDark(x, r) ? '1' : '0',
+          ].join(),
+          radix: 2,
+        ).toRadixString(16),
+    ];
+    expect(rows, want['rows'], reason: name);
+  });
 }

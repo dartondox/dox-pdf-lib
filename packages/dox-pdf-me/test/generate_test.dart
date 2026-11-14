@@ -301,13 +301,24 @@ void main() {
       expect(f.format(d, 'EEE MMM'), 'Tue May');
       expect(f.format(d, "'at' h a"), 'at 6 PM');
       expect(f.format(d, "dd 'o''clock'"), "07 o'clock");
+      // checked against date-fns 4.4.0 (en-US)
+      expect(f.format(d, 'MMM do, yy'), 'May 7th, 24');
+      expect(f.format(d, 'PPP'), 'May 7th, 2024');
+      expect(f.format(d, 'PPPPpp'), 'Tuesday, May 7th, 2024 at 6:05:09 PM');
+      expect(f.format(d, 'Pp'), '05/07/2024, 6:05 PM');
+      expect(
+        f.format(d, 'iiii eeeeee QQQQ wo Io'),
+        'Tuesday Tu 2nd quarter 19th 19th',
+      );
+      expect(f.format(DateTime(2020, 12, 29), 'R-II Y-ww'), '2020-53 2021-01');
     });
 
     test('valid formats', () {
       expect(f.isValid('yyyy'), isTrue);
       expect(f.isValid(' '), isFalse);
       expect(f.isValid('undefined'), isFalse);
-      expect(f.isValid('yyyy qq'), isFalse);
+      expect(f.isValid('yyyy jj'), isFalse);
+      expect(f.isValid('DD.MM.YYYY'), isFalse);
     });
 
     test('input values', () {
@@ -335,7 +346,7 @@ void main() {
         '07.05.2024 18:30',
       );
       expect(
-        const DatePlugin.time().formatValue('18:30', 'bad qq', 'en'),
+        const DatePlugin.time().formatValue('18:30', 'bad jj', 'en'),
         '18:30',
       );
       expect(
