@@ -36,8 +36,17 @@ class BarcodePlugin extends SchemaPlugin {
     if (!validateBarcodeInput(type, value)) return;
     Schema schema = props.schema;
     MatrixSymbol? matrix = MatrixSymbolBuilder.build(type, value);
+    // pdfme asks bwip-js for a 2D symbol of the fitted size (in mm)
+    BarcodeFitLayout? fitted = matrix == null
+        ? null
+        : getBarcodeFitLayout(
+            boxWidth: schema.width,
+            boxHeight: schema.height,
+            naturalWidth: matrix.ratio,
+            naturalHeight: 1,
+          );
     BarcodeSymbol? symbol =
-        matrix?.toSymbol() ??
+        matrix?.toSymbol(widthMm: fitted?.width, heightMm: fitted?.height) ??
         LinearSymbolBuilder.build(
           type,
           value,

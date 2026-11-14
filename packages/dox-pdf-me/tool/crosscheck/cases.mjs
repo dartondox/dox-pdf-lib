@@ -14,6 +14,8 @@
 //   them with pdftotext). The letters are shaped by other code (fontkit in
 //   pdfme, HarfBuzz rules here): marks sit in other places, and fontkit
 //   does not reorder some Myanmar vowels. So more pixels may differ.
+// - 'pdf417': PDF417 codes. The modules are the same as bwip-js, so only
+//   the edges of the bars may differ (vector here, SVG in pdfme).
 // - 'matrix': 2D codes (QR, Data Matrix, PDF417). The modules can differ
 //   (mask, encoding), so only the symbol box is compared, and the codes are
 //   decoded with zbarimg when it is installed.
@@ -227,6 +229,15 @@ const barcodes2d = [
   box('qrcode', 100, 50, 25, 25, { rotate: 30 }),
 ];
 
+// PDF417 keeps its natural width : height in the box (like pdfme): a tall
+// box, a wide box and a small one
+const pdf417s = [
+  box('pdf417', 5, 5, 40, 90, {}),
+  box('pdf417', 50, 5, 95, 25, {}),
+  box('pdf417', 50, 35, 60, 40, { barColor: '#1565c0', backgroundColor: '#fff9c4' }),
+  box('pdf417', 115, 35, 30, 55, { rotate: 90 }),
+];
+
 const multi = (() => {
   const p1 = [
     box('text', 10, 10, 120, 12, { fontSize: 16, required: true }),
@@ -394,6 +405,12 @@ export const cases = [
     'This is PDF417! Made by dox_pdf_me.',
     'rotated',
   ], { compare: 'matrix' }),
+  single('pdf417', pdf417s, [
+    'This is PDF417!',
+    'The quick brown fox jumps over the lazy dog. 1234567890123456',
+    'https://github.com/dartondox/dox-pdf-lib',
+    'Ünïcödé € 日本',
+  ], { compare: 'pdf417' }),
   multi,
   basePdf,
   empty,
