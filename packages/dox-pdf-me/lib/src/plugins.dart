@@ -1,11 +1,14 @@
 import 'barcodes/barcode_plugin.dart';
 import 'plugin.dart';
+import 'schemas/circle_mark_plugin.dart';
 import 'schemas/date_plugin.dart';
 import 'schemas/image_plugin.dart';
 import 'schemas/select_plugin.dart';
 import 'schemas/shape_plugins.dart';
+import 'schemas/signature_plugin.dart';
 import 'svg/svg_plugin.dart';
 import 'table/table_plugin.dart';
+import 'text/multi_variable_text_plugin.dart';
 import 'text/text_plugin.dart';
 
 /// The plugins `generate` uses when you pass none: only `text`, like
@@ -41,6 +44,9 @@ const Map<String, SchemaPlugin> builtInPlugins = <String, SchemaPlugin>{
   'Checkbox': CheckboxPlugin(),
   'RadioGroup': RadioGroupPlugin(),
   'Select': SelectPlugin(),
+  'Multi-Variable Text': MultiVariableTextPlugin(),
+  'Signature': SignaturePlugin(),
+  'Circle Mark': CircleMarkPlugin(),
   'Table': TablePlugin(),
 };
 

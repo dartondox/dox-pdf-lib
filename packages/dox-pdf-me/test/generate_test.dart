@@ -107,6 +107,9 @@ void main() {
           'checkbox',
           'radioGroup',
           'select',
+          'multiVariableText',
+          'signature',
+          'circleMark',
           'table',
         },
       );

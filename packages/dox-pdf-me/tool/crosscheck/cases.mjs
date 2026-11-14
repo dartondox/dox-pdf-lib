@@ -21,6 +21,7 @@
 //   decoded with zbarimg when it is installed.
 
 import { saSentences } from './sa_text.mjs';
+import { fieldCases } from './field_cases.mjs';
 import { tableCases } from './table_cases.mjs';
 
 const blank = (staticSchema) => ({
@@ -427,5 +428,8 @@ cases.push({
   },
   inputs: [{ title: 'Legacy template' }],
 });
+
+// signature, circleMark and multiVariableText (field_cases.mjs)
+cases.push(...fieldCases);
 
 cases.push(...tableCases);

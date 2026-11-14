@@ -47,15 +47,20 @@ void main() {
         'test/fixtures/crosscheck',
         testFontDir,
       ],
-      environment: <String, String>{'ONLY': 'table-'},
+      environment: <String, String>{'CROSSCHECK_ONLY': 'table-*'},
     );
     if (r.exitCode != 0) fail('render.mjs failed: ${r.stderr}');
-    cases = <Map<String, dynamic>>[
-      for (Object? c in jsonDecode(
-        File('$outDir/pdfme/cases.json').readAsStringSync(),
-      ) as List<dynamic>)
-        c! as Map<String, dynamic>,
-    ];
+    cases =
+        <Map<String, dynamic>>[
+              for (Object? c in jsonDecode(
+                File('$outDir/pdfme/cases.json').readAsStringSync(),
+              ) as List<dynamic>)
+                c! as Map<String, dynamic>,
+            ]
+            .where(
+              (Map<String, dynamic> c) => '${c['name']}'.startsWith('table-'),
+            )
+            .toList();
   });
 
   test('every table case looks like pdfme, area by area', () async {

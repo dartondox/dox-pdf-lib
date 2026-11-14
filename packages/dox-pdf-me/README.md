@@ -13,6 +13,10 @@ makes PDFs that look the same.
 It is built on [dox_pdf_lib](https://pub.dev/packages/dox_pdf_lib), our Dart
 port of pdf-lib.
 
+> **Not stable yet.** This package is new and still at version 0.0.x. Its API
+> can change between versions, with small breaking changes. Pin the exact
+> version in your `pubspec.yaml`, and read the CHANGELOG before you update.
+
 ## Install
 
 ```bash
@@ -155,6 +159,9 @@ dox_pdf_lib API, so one import is enough.
 | `date`, `time`, `dateTime` | `DatePlugin.date()`, `.time()`, `.dateTime()` |
 | `checkbox`, `radioGroup` | `CheckboxPlugin`, `RadioGroupPlugin` |
 | `select` | `SelectPlugin` |
+| `multiVariableText` | `MultiVariableTextPlugin` |
+| `signature` | `SignaturePlugin` (drawn like `image`) |
+| `circleMark` | `CircleMarkPlugin` |
 | `table` | `TablePlugin` |
 
 The text props work like in pdfme: `fontName`, `fontSize`, `alignment`
@@ -189,7 +196,39 @@ schemas below it move down, and the table goes on over new pages (pdfme's
 dynamic layout). On a PDF base, the table draws its full height on the
 same page, like pdfme.
 
-`multiVariableText` is not supported yet.
+### multiVariableText
+
+The schema has a `text` with `{name}` variables and a `variables` list of
+the names. The input is a JSON string with the value of each variable:
+
+```dart
+Map<String, dynamic> schema = <String, dynamic>{
+  'name': 'greeting',
+  'type': 'multiVariableText',
+  'position': <String, num>{'x': 20, 'y': 20},
+  'width': 170,
+  'height': 10,
+  'text': 'Hello {name}, welcome to {city}!',
+  'variables': <String>['name', 'city'],
+};
+Map<String, dynamic> input = <String, dynamic>{
+  'greeting': '{"name": "Ann", "city": "Paris"}',
+};
+```
+
+- The result is drawn like a `text` schema. All text props work, also
+  `dynamicFontSize`.
+- `{...}` parts without a value are removed.
+- When a variable of `variables` is missing in the input (or `null`),
+  nothing is drawn. With `required: true`, `generate` throws.
+- `readOnly: true`: the values come from the schema `content` (a JSON
+  string). With `contentSnapshot: true`, `content` is the text to draw.
+
+### circleMark
+
+A circle line around the box when the input is `'true'`. `color` is the
+line color (a hex value) and `borderWidth` is the line width (mm). Nothing
+is drawn for other inputs, a bad color or a width of 0.
 
 ## Fonts
 
@@ -260,8 +299,12 @@ This list compares with pdfme 6.2.8.
   work (pdfme throws `raw.split is not a function` on a blank base PDF).
 - **Not supported yet:** `overflow: "expand"` (the text box does not grow,
   and it does not move other schemas), `list`, inline markdown text,
-  `multiVariableText`, font URLs, base PDFs
+  font URLs, base PDFs
   with a user password (`basePdfPassword`), and link annotations of the base PDF.
+- **multiVariableText input as a map:** pdfme needs a JSON string and
+  throws for an object when the schema has variables. This package also
+  takes a `Map` and turns it into JSON. With `textFormat: "inline-markdown"`, the text is drawn as plain
+  text (inline markdown is not supported yet).
 - **EXIF orientation** of JPEG and PNG images works like in pdfme. pdfme
   turns the pixels and encodes a JPEG again; this package keeps the file and
   turns it when it draws it. The page looks the same.

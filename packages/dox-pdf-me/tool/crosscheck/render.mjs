@@ -31,8 +31,14 @@ const plugins = {
   checkbox: schemas.checkbox,
   radioGroup: schemas.radioGroup,
   select: schemas.select,
+  signature: schemas.signature,
+  circleMark: schemas.circleMark,
+  multiVariableText: schemas.multiVariableText,
   table: schemas.table,
 };
+
+// CROSSCHECK_ONLY=a,b renders only the cases with these names.
+const only = process.env.CROSSCHECK_ONLY?.split(',');
 
 function readFile(name) {
   for (const dir of fileDirs) {
@@ -55,12 +61,10 @@ function resolve(value) {
   return value;
 }
 
-// ONLY=<prefix>: render only the cases whose name starts with it
-const only = process.env.ONLY;
-const picked = only ? cases.filter((c) => c.name.startsWith(only)) : cases;
-
-writeFileSync(join(outDir, 'cases.json'), JSON.stringify(picked, null, 1));
-for (const c of picked) {
+writeFileSync(join(outDir, 'cases.json'), JSON.stringify(cases, null, 1));
+for (const c of cases) {
+  // a name that ends with * is a prefix
+  if (only && !only.some((o) => (o.endsWith('*') ? c.name.startsWith(o.slice(0, -1)) : o === c.name))) continue;
   const pdf = await generate({
     template: resolve(c.template),
     inputs: resolve(c.inputs),
@@ -69,4 +73,4 @@ for (const c of picked) {
   });
   writeFileSync(join(outDir, `${c.name}.pdf`), pdf);
 }
-console.log(`rendered ${picked.length} cases`);
+console.log(`rendered ${cases.length} cases`);
