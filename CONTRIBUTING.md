@@ -30,6 +30,24 @@ eg. `dox_pdf_lib-v0.0.2` or `dox_pdf_me-v0.0.1`. A tag on `main` runs
 `.github/workflows/release.yaml`. It runs the tests first, and publishes
 the package to pub.dev only when they pass.
 
+## dox_pdf_me
+
+The paths are in `packages/dox-pdf-me`.
+
+- Goal: the same page look as the pdfme generator for the same template and
+  inputs. Read the pdfme source of a feature first and match it.
+  `README.md` lists the known differences. Keep that list up to date.
+- One class per schema type (`SchemaPlugin`). Shared code: `lib/src/layout.dart`
+  (boxes and rotation), `lib/src/color.dart`, `lib/src/fonts/`.
+- Tests: `dart test`. The line break tables in `lib/src/text/` come from
+  pdfme (Unicode 18). Do not edit them by hand.
+- Crosscheck with pdfme: run `npm ci` in `tool/crosscheck` (Node.js), and
+  install pdftoppm (poppler-utils). `test/crosscheck_test.dart` renders the
+  cases of `tool/crosscheck/cases.mjs` with pdfme and with dox_pdf_me, and
+  compares the pages pixel by pixel. With `zbarimg` (zbar-tools) it also
+  decodes the 2D codes. Without node_modules the test is skipped. CI always
+  runs it. Add a case there for every new feature.
+
 ## dox_pdf_lib
 
 The rest of this file is about `dox_pdf_lib`. The paths are in

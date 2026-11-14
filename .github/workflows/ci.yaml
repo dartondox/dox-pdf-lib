@@ -2,7 +2,7 @@ name: CI
 
 # Every push to main and every pull request: format and analyze of all
 # packages, then the tests of each package. dox_pdf_lib also runs the Rust
-# checks and the pdf-lib crosscheck. Every PR builds the 5 native targets
+# checks and the pdf-lib crosscheck; dox_pdf_me runs the pdfme crosscheck. Every PR builds the 5 native targets
 # of dox_pdf_lib.
 #
 # The Release workflow (release.yaml) runs this workflow first on a tag.
@@ -94,15 +94,37 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # dox_pdf_lib is a workspace package here: its build hook builds the
+      # native library from source with cargo
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: packages/dox-pdf-lib/native
       - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
         with:
           sdk: stable
+      # pdfme (Node.js) for the crosscheck test
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
       - name: Resolve the workspace
         run: dart pub get
-      # the package has no tests yet
+      - name: Install pdfme for the crosscheck
+        working-directory: packages/dox-pdf-me/tool/crosscheck
+        run: npm ci
+      # pdftoppm renders the pages; zbarimg decodes the 2D codes
+      - name: Install poppler-utils and zbar-tools
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils zbar-tools
+      # the crosscheck must run here, not be skipped
       - name: Dart tests
         working-directory: packages/dox-pdf-me
-        run: if [ -d test ]; then dart test; fi
+        run: |
+          test -d tool/crosscheck/node_modules/@pdfme/generator
+          command -v pdftoppm
+          command -v zbarimg
+          dart test --concurrency=4
 
   # every PR builds the 5 targets too, so a Windows break shows before a release
   build:

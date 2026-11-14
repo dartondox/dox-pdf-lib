@@ -6,7 +6,7 @@ version and its own releases.
 | Package | What it is |
 | --- | --- |
 | [dox_pdf_lib](packages/dox-pdf-lib) ([pub.dev](https://pub.dev/packages/dox_pdf_lib)) | Create and edit PDF documents, with the API of the pdf-lib JavaScript library. A native Rust core does the work through dart:ffi. |
-| [dox_pdf_me](packages/dox-pdf-me) ([pub.dev](https://pub.dev/packages/dox_pdf_me)) | Make PDF documents on top of dox_pdf_lib. Work in progress. |
+| [dox_pdf_me](packages/dox-pdf-me) ([pub.dev](https://pub.dev/packages/dox_pdf_me)) | Make PDF files from pdfme templates. A Dart port of the pdfme generator, on top of dox_pdf_lib. |
 
 Run `dart pub get` once at the root. It links all packages (a Dart pub
 workspace).

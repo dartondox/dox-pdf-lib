@@ -1,0 +1,373 @@
+import 'dart:typed_data';
+
+import 'package:dox_pdf_me/dox_pdf_me.dart';
+import 'package:dox_pdf_me/src/expression.dart';
+import 'package:dox_pdf_me/src/generate.dart';
+import 'package:dox_pdf_me/src/schemas/date_format.dart';
+import 'package:dox_pdf_me/src/schemas/image_plugin.dart';
+import 'package:test/test.dart';
+
+Map<String, dynamic> blank([List<Map<String, dynamic>>? staticSchema]) =>
+    <String, dynamic>{
+      'width': 210,
+      'height': 297,
+      'padding': <int>[10, 10, 10, 10],
+      'staticSchema': ?staticSchema,
+    };
+
+Map<String, dynamic> schema(
+  String name,
+  String type, [
+  Map<String, dynamic> props = const <String, dynamic>{},
+]) => <String, dynamic>{
+  'name': name,
+  'type': type,
+  'position': <String, num>{'x': 10, 'y': 10},
+  'width': 50,
+  'height': 10,
+  ...props,
+};
+
+Map<String, dynamic> template(List<List<Map<String, dynamic>>> pages) =>
+    <String, dynamic>{'basePdf': blank(), 'schemas': pages};
+
+Matcher throwsMessage(String text) => throwsA(
+  isA<ArgumentError>().having(
+    (ArgumentError e) => '${e.message}',
+    'message',
+    contains(text),
+  ),
+);
+
+void main() {
+  group('generate', () {
+    test('one page per schema page and input, A4 size', () async {
+      Uint8List bytes = await generate(
+        template: template(<List<Map<String, dynamic>>>[
+          <Map<String, dynamic>>[schema('a', 'text')],
+          <Map<String, dynamic>>[],
+        ]),
+        inputs: <Map<String, dynamic>>[
+          <String, dynamic>{'a': 'one'},
+          <String, dynamic>{'a': 'two'},
+          <String, dynamic>{},
+        ],
+      );
+      PDFDocument doc = await PDFDocument.load(bytes);
+      expect(doc.getPageCount(), 6);
+      expect(doc.getPage(0).getWidth(), closeTo(595.266, 1e-6));
+      expect(doc.getPage(0).getHeight(), closeTo(841.8762, 1e-6));
+      doc.dispose();
+    });
+
+    test('pdfme metadata defaults and options', () async {
+      Uint8List bytes = await generate(
+        template: template(<List<Map<String, dynamic>>>[
+          <Map<String, dynamic>>[],
+        ]),
+        inputs: <Map<String, dynamic>>[<String, dynamic>{}],
+        options: <String, dynamic>{'title': 'Invoice', 'lang': 'ja'},
+      );
+      PDFDocument doc = await PDFDocument.load(bytes, updateMetadata: false);
+      expect(doc.getTitle(), 'Invoice');
+      expect(doc.getAuthor(), 'pdfme (https://pdfme.com/)');
+      expect(doc.getProducer(), 'pdfme (https://pdfme.com/)');
+      expect(doc.getLanguage(), 'ja');
+      doc.dispose();
+    });
+
+    test('without plugins only text works, like pdfme', () {
+      expect(
+        generate(
+          template: template(<List<Map<String, dynamic>>>[
+            <Map<String, dynamic>>[schema('a', 'line')],
+          ]),
+          inputs: <Map<String, dynamic>>[<String, dynamic>{}],
+        ),
+        throwsMessage('Plugin or renderer for type line not found'),
+      );
+    });
+
+    test('builtInPlugins has every type', () {
+      expect(
+        builtInPlugins.values.map((SchemaPlugin p) => p.type).toSet(),
+        <String>{
+          'text',
+          'image',
+          'svg',
+          'line',
+          'rectangle',
+          'ellipse',
+          ...barcodeTypes,
+          'date',
+          'time',
+          'dateTime',
+          'checkbox',
+          'radioGroup',
+          'select',
+        },
+      );
+    });
+
+    test('a custom plugin', () async {
+      _Recorder recorder = _Recorder();
+      await generate(
+        template: template(<List<Map<String, dynamic>>>[
+          <Map<String, dynamic>>[schema('a', 'stamp'), schema('', 'stamp')],
+        ]),
+        inputs: <Map<String, dynamic>>[
+          <String, dynamic>{'a': 42},
+        ],
+        plugins: <String, SchemaPlugin>{'Stamp': recorder},
+      );
+      // a schema with no name is skipped; numbers become text
+      expect(recorder.values, <String>['42']);
+    });
+
+    test('user plugins must cover every type', () {
+      expect(
+        generate(
+          template: template(<List<Map<String, dynamic>>>[
+            <Map<String, dynamic>>[schema('a', 'text'), schema('b', 'x')],
+          ]),
+          inputs: <Map<String, dynamic>>[<String, dynamic>{}],
+          plugins: <String, SchemaPlugin>{'Text': const TextPlugin()},
+        ),
+        throwsMessage('x of template.schemas is not found in plugins.'),
+      );
+    });
+
+    test('required input', () {
+      expect(
+        generate(
+          template: template(<List<Map<String, dynamic>>>[
+            <Map<String, dynamic>>[
+              schema('a', 'text', <String, dynamic>{'required': true}),
+            ],
+          ]),
+          inputs: <Map<String, dynamic>>[
+            <String, dynamic>{'a': ''},
+          ],
+        ),
+        throwsMessage("input for 'a' is required to generate this PDF"),
+      );
+    });
+
+    test('font checks', () {
+      Future<Uint8List> run(Map<String, dynamic> font, String fontName) =>
+          generate(
+            template: template(<List<Map<String, dynamic>>>[
+              <Map<String, dynamic>>[
+                schema('a', 'text', <String, dynamic>{'fontName': fontName}),
+              ],
+            ]),
+            inputs: <Map<String, dynamic>>[<String, dynamic>{}],
+            options: <String, dynamic>{'font': font},
+          );
+      Uint8List roboto = FontStore.defaultFont.data;
+      expect(
+        run(<String, dynamic>{
+          'A': <String, dynamic>{'data': roboto},
+        }, 'A'),
+        throwsMessage('fallback flag is not found in font'),
+      );
+      expect(
+        run(<String, dynamic>{
+          'A': <String, dynamic>{'data': roboto, 'fallback': true},
+          'B': <String, dynamic>{'data': roboto, 'fallback': true},
+        }, 'A'),
+        throwsMessage('2 fallback flags found in font'),
+      );
+      expect(
+        run(<String, dynamic>{
+          'A': <String, dynamic>{'data': roboto, 'fallback': true},
+        }, 'Nope'),
+        throwsMessage('Nope of template.schemas is not found in font'),
+      );
+    });
+
+    test('empty inputs throw', () {
+      expect(
+        generate(
+          template: template(<List<Map<String, dynamic>>>[]),
+          inputs: <Map<String, dynamic>>[],
+        ),
+        throwsMessage('inputs should not be empty'),
+      );
+    });
+
+    test('static schemas and the legacy format', () async {
+      _Recorder recorder = _Recorder();
+      await generate(
+        template: <String, dynamic>{
+          'basePdf': blank(<Map<String, dynamic>>[
+            schema('', 'stamp', <String, dynamic>{
+              'readOnly': true,
+              'content': '{currentPage}/{totalPages}',
+            }),
+          ]),
+          'schemas': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'x': <String, dynamic>{
+                'type': 'stamp',
+                'position': <String, num>{'x': 0, 'y': 0},
+                'width': 10,
+                'height': 10,
+              },
+            },
+            <String, dynamic>{},
+          ],
+        },
+        inputs: <Map<String, dynamic>>[
+          <String, dynamic>{'x': 'value'},
+        ],
+        plugins: <String, SchemaPlugin>{'Stamp': recorder},
+      );
+      expect(recorder.values, <String>['1/2', 'value', '2/2']);
+    });
+  });
+
+  group('input values like pdfme (`input[name] || ""`)', () {
+    test('falsy values are empty', () {
+      for (Object? v in <Object?>[null, false, '', 0, 0.0, double.nan]) {
+        expect(Generator.inputValue(v), '', reason: '$v');
+      }
+      expect(Generator.inputValue(true), 'true');
+      expect(Generator.inputValue(1.5), '1.5');
+      expect(Generator.inputValue(3.0), '3');
+      expect(Generator.inputValue(<int>[1, 2]), '[1,2]');
+    });
+  });
+
+  group('placeholders', () {
+    PlaceholderResolver resolver = PlaceholderResolver(
+      schemas: <Schema>[
+        Schema(<String, dynamic>{
+          'name': 'company',
+          'type': 'text',
+          'readOnly': true,
+          'content': 'Dox',
+        }),
+      ],
+      variables: <String, dynamic>{
+        'name': 'Ann',
+        'order': '{"id": 7, "total": "1.50"}',
+        'amount': '12.50',
+        'currentPage': 1,
+        'totalPages': 3,
+      },
+    );
+
+    test('names, paths and page numbers', () {
+      expect(
+        resolver.replace('{name} at {company}: {currentPage} of {totalPages}'),
+        'Ann at Dox: 1 of 3',
+      );
+      expect(
+        resolver.replace('Order {order.id} {order.total}'),
+        'Order 7 1.50',
+      );
+      // JSON numbers like pdfme: "12.50" is the number 12.5
+      expect(resolver.replace('{amount}'), '12.5');
+      expect(resolver.replace('{order.missing}'), 'undefined');
+    });
+
+    test('unknown names and expressions stay as they are', () {
+      expect(resolver.replace('{nope} {1 + 2} {'), '{nope} {1 + 2} {');
+      expect(resolver.replace('no braces'), 'no braces');
+    });
+
+    test('date', () {
+      expect(
+        resolver.replace('{date}'),
+        matches(RegExp(r'^\d{4}/\d{2}/\d{2}$')),
+      );
+    });
+  });
+
+  group('dates (date-fns tokens)', () {
+    DateFormatter f = const DateFormatter();
+    DateTime d = DateTime(2024, 5, 7, 18, 5, 9);
+
+    test('tokens', () {
+      expect(f.format(d, 'yyyy/MM/dd HH:mm:ss'), '2024/05/07 18:05:09');
+      expect(f.format(d, 'MM/dd/yyyy hh:mm aa'), '05/07/2024 06:05 PM');
+      expect(f.format(d, 'EEEE, MMMM d, yy'), 'Tuesday, May 7, 24');
+      expect(f.format(d, 'EEE MMM'), 'Tue May');
+      expect(f.format(d, "'at' h a"), 'at 6 PM');
+      expect(f.format(d, "dd 'o''clock'"), "07 o'clock");
+    });
+
+    test('valid formats', () {
+      expect(f.isValid('yyyy'), isTrue);
+      expect(f.isValid(' '), isFalse);
+      expect(f.isValid('undefined'), isFalse);
+      expect(f.isValid('yyyy qq'), isFalse);
+    });
+
+    test('input values', () {
+      DateInput input = const DateInput();
+      expect(input.parse('2024/05/07', 'date'), DateTime(2024, 5, 7));
+      expect(
+        input.parse('2024/05/07 18:30', 'dateTime'),
+        DateTime(2024, 5, 7, 18, 30),
+      );
+      expect(input.parse('09:05', 'time'), DateTime(2021, 1, 1, 9, 5));
+      expect(
+        input.parse('2024-05-07', 'date'),
+        DateTime.utc(2024, 5, 7).toLocal(),
+      );
+      expect(() => input.parse('nope', 'date'), throwsRangeError);
+    });
+
+    test('default formats per locale', () {
+      expect(
+        const DatePlugin.date().formatValue('2024/05/07', null, 'en'),
+        '05/07/2024',
+      );
+      expect(
+        const DatePlugin.dateTime().formatValue('2024/05/07 18:30', '', 'de'),
+        '07.05.2024 18:30',
+      );
+      expect(
+        const DatePlugin.time().formatValue('18:30', 'bad qq', 'en'),
+        '18:30',
+      );
+      expect(
+        () => const DatePlugin.date().formatValue('2024/05/07', null, 'xx'),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('image fit', () {
+    Schema s(String fit, String position) => Schema(<String, dynamic>{
+      'width': 40,
+      'height': 20,
+      'objectFit': fit,
+      'objectPosition': position,
+    });
+
+    test('contain and positions', () {
+      ImageFit f = ImageFit.of(s('contain', 'right bottom'), 10, 10);
+      expect((f.width, f.height, f.offsetX, f.offsetY), (20, 20, 20, 0));
+      f = ImageFit.of(s('contain', 'bad'), 10, 10);
+      expect(f.offsetX, 10);
+    });
+
+    test('cover is always centered', () {
+      ImageFit f = ImageFit.of(s('cover', 'left top'), 10, 10);
+      expect((f.width, f.height, f.offsetX, f.offsetY), (40, 40, 0, -10));
+    });
+  });
+}
+
+class _Recorder extends SchemaPlugin {
+  final List<String> values = <String>[];
+
+  @override
+  String get type => 'stamp';
+
+  @override
+  Future<void> pdf(RenderProps props) async => values.add(props.value);
+}
