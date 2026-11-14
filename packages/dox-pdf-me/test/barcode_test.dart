@@ -282,7 +282,7 @@ void main() {
     List<dynamic> cases = jsonDecode(
       File('test/fixtures/barcodes/barcode_errors.json').readAsStringSync(),
     ) as List<dynamic>;
-    expect(cases, hasLength(75));
+    expect(cases, hasLength(83));
     for (Object? c in cases) {
       Map<String, dynamic> m = c! as Map<String, dynamic>;
       String? message;
@@ -355,6 +355,21 @@ void main() {
       expect(golden, hasLength(27));
       golden.forEach((String input, dynamic widths) {
         expect(Code128Encoder.widths(input).join(), widths, reason: input);
+      });
+    });
+    test('upce: every bar is the same as bwip-js (61 inputs)', () {
+      // made with bwip-js 4.11.4 (`bwipjs.raw`): the bar and space widths;
+      // the check digit comes from the UPC-A expansion
+      Map<String, dynamic> golden = jsonDecode(
+        File('test/fixtures/barcodes/upce_bwip.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(golden, hasLength(61));
+      golden.forEach((String input, dynamic widths) {
+        expect(
+          LinearSymbolBuilder.upceWidths(input).$1.join(),
+          widths,
+          reason: input,
+        );
       });
     });
     test('gs1datamatrix: every module is the same as bwip-js (26 inputs)', () {

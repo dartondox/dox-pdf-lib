@@ -86,6 +86,14 @@ const cases = [
   ['pdf417', '漢'.repeat(905)],
   ['pdf417', '漢'.repeat(1000)],
   ['pdf417', 'x'.repeat(1000)],
+  ['upce', '00634045'],
+  ['upce', '00634044'],
+  ['upce', '0481683'],
+  ['upce', '04816839'],
+  ['code39', 'CODE\t39'],
+  ['code39', 'CODE\n39'],
+  ['code39', 'CODE\u00a039'],
+  ['code39', 'CODE 39'],
 ];
 
 const out = [];

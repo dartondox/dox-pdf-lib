@@ -373,5 +373,45 @@
   "type": "pdf417",
   "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "message": null
+ },
+ {
+  "type": "upce",
+  "value": "00634045",
+  "message": "bwipp.upcEbadCheckDigit#7845: Incorrect UPC check digit provided"
+ },
+ {
+  "type": "upce",
+  "value": "00634044",
+  "message": null
+ },
+ {
+  "type": "upce",
+  "value": "0481683",
+  "message": null
+ },
+ {
+  "type": "upce",
+  "value": "04816839",
+  "message": null
+ },
+ {
+  "type": "code39",
+  "value": "CODE\t39",
+  "message": "bwipp.code39badCharacter#10257: Code 39 must contain only digits, capital letters, spaces and the symbols -.$/+%"
+ },
+ {
+  "type": "code39",
+  "value": "CODE\n39",
+  "message": "bwipp.code39badCharacter#10257: Code 39 must contain only digits, capital letters, spaces and the symbols -.$/+%"
+ },
+ {
+  "type": "code39",
+  "value": "CODE 39",
+  "message": "bwipp.code39badCharacter#10257: Code 39 must contain only digits, capital letters, spaces and the symbols -.$/+%"
+ },
+ {
+  "type": "code39",
+  "value": "CODE 39",
+  "message": null
  }
 ]
