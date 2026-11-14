@@ -300,12 +300,34 @@ void main() {
         _expectDataMatrixFinder(m.grid);
       }
     });
-    test('pdf417: the package may need more codewords than BWIPP', () {
-      // bwip-js: 103 x 10 (10 data codewords). The barcode package's text
-      // compaction needs 11 here, so BWIPP's rule gives 3 columns.
-      MatrixSymbol m = MatrixSymbolBuilder.build('pdf417', 'This is PDF417!')!;
-      expect(m.grid.columns, 120);
-      expect(m.grid.rows, 7);
+    test('pdf417: every module is the same as bwip-js (20 inputs)', () {
+      // made with bwip-js 4.11.4 (`bwipjs.raw`): per symbol row, the
+      // modules as a hex number (1 is dark)
+      Map<String, dynamic> golden = jsonDecode(
+        File('test/fixtures/barcodes/pdf417_bwip.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect(golden, hasLength(20));
+      golden.forEach((String input, dynamic g) {
+        Map<String, dynamic> want = g as Map<String, dynamic>;
+        MatrixSymbol m = MatrixSymbolBuilder.build('pdf417', input)!;
+        String name = input.length > 20 ? input.substring(0, 20) : input;
+        expect(m.grid.columns, want['width'], reason: name);
+        List<String> rows = <String>[
+          for (int r = 0; r < m.grid.rows; r++)
+            BigInt.parse(
+              <String>[
+                for (int x = 0; x < m.grid.columns; x++)
+                  m.grid.isDark(x, r) ? '1' : '0',
+              ].join(),
+              radix: 2,
+            ).toRadixString(16),
+        ];
+        expect(rows, want['rows'], reason: name);
+      });
+    });
+    test('pdf417: too much data gives null', () {
+      expect(MatrixSymbolBuilder.build('pdf417', '\u0001' * 2000), isNull);
+      expect(MatrixSymbolBuilder.build('pdf417', ''), isNull);
     });
     test('gs1datamatrix: element string parsing', () {
       expect(MatrixSymbolBuilder.parseGs1('(01)123(10)AB'), <(String, String)>[

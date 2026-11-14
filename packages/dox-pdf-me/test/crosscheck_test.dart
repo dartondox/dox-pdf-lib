@@ -24,7 +24,8 @@ const Map<String, double> tolerance = <String, double>{
   'pixels': 0.004,
   'barcode': 0.03,
   'reencoded': 0.02,
-  'matrix': 0.1,
+  'pdf417': 0.004,
+  'matrix': 0.06,
   'lines': 0.1,
 };
 

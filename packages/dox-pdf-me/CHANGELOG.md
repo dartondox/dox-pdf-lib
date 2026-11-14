@@ -1,3 +1,12 @@
+## Unreleased
+
+- PDF417 has the same modules as in pdfme. The `barcode` package picked
+  other columns, rows and codewords, so the code was wider and lower than
+  in pdfme and did not fill a box made for it. Now a port of the bwip-js
+  (BWIPP) encoder makes the symbol.
+- 2D codes (QR code, Data Matrix, PDF417) put their module edges on the
+  same grid as bwip-js, so small codes look the same as in pdfme.
+
 ## 0.0.1
 
 - First version: `generate(template, inputs, options, plugins)`, a Dart port

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:barcode/barcode.dart';
 
 import 'barcode_symbol.dart';
+import 'pdf417_encoder.dart';
 
 /// A 2D barcode: its module grid and the size bwip-js gives it.
 class MatrixSymbol {
@@ -17,21 +18,53 @@ class MatrixSymbol {
   double get ratio => grid.columns / (grid.rows * rowHeight);
 
   /// The symbol in module units, ready to be stretched to its fitted box.
-  BarcodeSymbol toSymbol() {
-    List<BarcodeRect> rects = <BarcodeRect>[
-      for (BarcodeRect r in grid.runs())
-        BarcodeRect(r.x, r.y * rowHeight, r.width, r.height * rowHeight),
-    ];
+  ///
+  /// With the fitted size ([widthMm] x [heightMm]) the module edges are
+  /// rounded to whole bwip-js units (1/5 point at that size), like the
+  /// SVG pdfme draws. That keeps the page the same at small sizes.
+  BarcodeSymbol toSymbol({double? widthMm, double? heightMm}) {
+    int units = grid.rows * rowHeight;
+    if (widthMm == null || heightMm == null) {
+      return BarcodeSymbol(
+        width: grid.columns.toDouble(),
+        height: units.toDouble(),
+        rects: <BarcodeRect>[
+          for (BarcodeRect r in grid.runs())
+            BarcodeRect(r.x, r.y * rowHeight, r.width, r.height * rowHeight),
+        ],
+      );
+    }
+    double w = widthMm / 25.4 * 72 * 5;
+    double h = heightMm / 25.4 * 72 * 5;
+    double sx = w / grid.columns;
+    double sy = h / units;
+    double height = _jsRound(h);
+    // bwip-js rounds y from the bottom of the symbol, then flips it
+    double y(double fromTop) => height - _jsRound((units - fromTop) * sy);
     return BarcodeSymbol(
-      width: grid.columns.toDouble(),
-      height: (grid.rows * rowHeight).toDouble(),
-      rects: rects,
+      width: _jsRound(w),
+      height: height,
+      rects: <BarcodeRect>[
+        for (BarcodeRect r in grid.runs())
+          _snapped(
+            _jsRound(r.x * sx),
+            _jsRound((r.x + r.width) * sx),
+            y(r.y * rowHeight),
+            y((r.y + r.height) * rowHeight),
+          ),
+      ],
     );
   }
+
+  static BarcodeRect _snapped(double x0, double x1, double y0, double y1) =>
+      BarcodeRect(x0, y0, x1 - x0, y1 - y0);
+
+  /// JavaScript's `Math.round`: halves go up.
+  static double _jsRound(double v) => (v + 0.5).floorToDouble();
 }
 
-/// Builds the 2D barcodes (qrcode, gs1datamatrix, pdf417) with the
-/// `barcode` package, set up to look like bwip-js.
+/// Builds the 2D barcodes (qrcode, gs1datamatrix, pdf417), set up to look
+/// like bwip-js. QR code and Data Matrix use the `barcode` package.
 class MatrixSymbolBuilder {
   const MatrixSymbolBuilder._();
 
@@ -45,10 +78,6 @@ class MatrixSymbolBuilder {
         _ => null,
       };
     } on BarcodeException {
-      return null;
-    } on RangeError {
-      // the barcode package's PDF417 fails this way on too much binary
-      // data (bwip-js fails too: the data is too long)
       return null;
     }
   }
@@ -105,72 +134,13 @@ class MatrixSymbolBuilder {
     '17', '18', '19', '20', '31', '32', '33', '34', '35', '36', '41',
   }.contains(ai.substring(0, 2));
 
-  /// PDF417 in the shape BWIPP picks: error correction level by data size
-  /// (2 to 5), `columns = round(sqrt((m + k) / 3))`, row height 3 modules.
-  ///
-  /// The `barcode` package can not be told the column count, only a
-  /// preferred width : height ratio. So we find the number of data
-  /// codewords `m` of the package's encoding first, then ask for the
-  /// exact ratio of the BWIPP shape.
-  static MatrixSymbol pdf417(String value) {
-    int m = _pdf417DataCodewords(value);
-    int level = m <= 40
-        ? 2
-        : m <= 160
-        ? 3
-        : m <= 320
-        ? 4
-        : 5;
-    int k = 1 << (level + 1);
-    int columns = math.max(2, math.sqrt((m + k) / 3).round());
-    int rows = math.max(2, ((m + k + 1) / columns).ceil());
-    return MatrixSymbol(
-      _pdf417Grid(
-        value,
-        Pdf417SecurityLevel.values[level],
-        (17 * columns + 69) / (rows * 3),
-        3,
-      ),
-      rowHeight: 3,
-    );
+  /// PDF417 with our port of the BWIPP encoder, so the codewords, the
+  /// columns and the rows are the same as in bwip-js. Row height 3
+  /// modules. Null when the data is too long.
+  static MatrixSymbol? pdf417(String value) {
+    Pdf417Symbol? symbol = Pdf417Encoder.encode(value);
+    return symbol == null ? null : MatrixSymbol(symbol.grid(), rowHeight: 3);
   }
-
-  /// The number of data codewords of [value] (without the length word).
-  ///
-  /// With level 0 (2 correction words) and a huge preferred ratio, the
-  /// package takes the most columns that still give 2 rows: `m + 2`. Past
-  /// 60 columns the count is only known to a window, so it is refined by
-  /// asking for a narrower shape.
-  static int _pdf417DataCodewords(String value) {
-    ModuleGrid g = _pdf417Grid(value, Pdf417SecurityLevel.level0, 1e9, 1);
-    int columns = (g.columns - 69) ~/ 17;
-    if (columns < 60) return columns - 2;
-    // total = m + 3 is in (columns * (rows - 1), columns * rows]
-    int low = columns * (g.rows - 1) + 1;
-    int high = columns * g.rows;
-    for (int i = 0; i < 3 && low < high; i++) {
-      int c = math.max(2, (high / 60).ceil());
-      int r = ((low + high) / 2 / c).ceil();
-      g = _pdf417Grid(value, Pdf417SecurityLevel.level0, (17 * c + 69) / r, 1);
-      c = (g.columns - 69) ~/ 17;
-      low = math.max(low, c * (g.rows - 1) + 1);
-      high = math.min(high, c * g.rows);
-    }
-    return (low + high) ~/ 2 - 3;
-  }
-
-  static ModuleGrid _pdf417Grid(
-    String value,
-    Pdf417SecurityLevel level,
-    double ratio,
-    double moduleHeight,
-  ) => readGrid(
-    Barcode.pdf417(
-      securityLevel: level,
-      moduleHeight: moduleHeight,
-      preferredRatio: ratio,
-    ).make(value, width: 10000, height: 10000),
-  );
 
   /// The module grid of 2D barcode [elements] from the `barcode` package.
   /// One module is the narrowest run; one row is the height of a bar.

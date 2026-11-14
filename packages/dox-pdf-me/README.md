@@ -204,11 +204,12 @@ This list compares with pdfme 6.2.8.
 - **Barcodes are vectors.** pdfme draws barcodes with bwip-js. This package
   draws them as vector shapes with the `barcode` package. The bars of EAN-13,
   EAN-8, UPC-A, UPC-E, Code 39, NW-7, ITF-14 and Japan Post are in the same
-  places. Small differences:
+  places. PDF417 has the same modules as bwip-js (same codewords, columns
+  and rows). Small differences:
   - The text under the bars uses Helvetica, not OCR-B. It has the same place
     and size.
-  - QR codes can use another mask, and PDF417 can have another number of
-    columns. The size, place and data are the same, and scanners read them.
+  - QR codes can use another mask. The size, place and data are the same,
+    and scanners read them.
   - Code 128 can pick other code sets for some texts. The data is the same.
 - **SVG:** `fill-rule="evenodd"` fills like `nonzero`.
 - **Complex scripts** (Thai, Arabic, Hindi, ...) are drawn with HarfBuzz
@@ -245,7 +246,10 @@ See the [dox_pdf_lib platforms](https://pub.dev/packages/dox_pdf_lib#platforms).
 
 The behavior comes from [pdfme](https://github.com/pdfme/pdfme) (MIT) by
 Kyohei Fukuda and the pdfme contributors. The line break tables come from
-pdfme and the Unicode Character Database.
+pdfme and the Unicode Character Database. The PDF417 encoder is a port of
+[BWIPP](https://github.com/bwipp/postscriptbarcode) (MIT) by Terry Burton,
+which bwip-js uses. See
+[lib/src/barcodes/BWIPP-LICENSE.txt](lib/src/barcodes/BWIPP-LICENSE.txt).
 
 The package includes the **Roboto** font (Copyright 2011 Google Inc.), under
 the Apache License 2.0. See
