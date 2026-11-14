@@ -23,7 +23,10 @@ import 'schema.dart';
 ///
 /// Or read the JSON of the pdfme designer with [Template.fromJson].
 class Template {
-  const Template({required this.basePdf, required this.schemas});
+  const Template({required this.basePdf, required this.schemas})
+    : _source = null;
+
+  const Template._(this.basePdf, this.schemas, this._source);
 
   /// Reads the pdfme template JSON. The old format (each page a map of
   /// name to schema) is read too.
@@ -44,8 +47,8 @@ class Template {
     }
 
     Object? base = raw.basePdf;
-    return Template(
-      basePdf: raw.isBlank && base is Map<Object?, Object?>
+    return Template._(
+      raw.isBlank && base is Map<Object?, Object?>
           ? BlankPdf(
               width: (base['width']! as num).toDouble(),
               height: (base['height']! as num).toDouble(),
@@ -55,10 +58,11 @@ class Template {
               ],
             )
           : PdfFile(BasePages.bytes(base)),
-      schemas: <List<Schema>>[
+      <List<Schema>>[
         for (List<RawSchema> page in raw.schemas)
           <Schema>[for (RawSchema s in page) read(s)],
       ],
+      Map<String, Object?>.of(json),
     );
   }
 
@@ -67,10 +71,24 @@ class Template {
   /// The schemas of each page.
   final List<List<Schema>> schemas;
 
+  /// The JSON map of `fromJson`, or null.
+  final Map<String, Object?>? _source;
+
   /// The pdfme template JSON.
-  Map<String, Object?> toJson() => <String, Object?>{
-    'basePdf': switch (basePdf) {
+  ///
+  /// A template read with [Template.fromJson] keeps the keys this package
+  /// does not know: top-level keys (eg. `pdfmeVersion`) and extra keys of a
+  /// blank `basePdf`. The schemas are written from the typed classes, and
+  /// each keeps its own extra keys. The old format (each page a map) is
+  /// written as the list format.
+  Map<String, Object?> toJson() {
+    Map<String, Object?>? source = _source;
+    Object? sourceBase = source?['basePdf'];
+    Object base = switch (basePdf) {
       BlankPdf b => <String, Object?>{
+        if (sourceBase is Map<Object?, Object?>)
+          for (MapEntry<Object?, Object?> e in sourceBase.entries)
+            if (e.key is String) e.key! as String: e.value,
         'width': b.width,
         'height': b.height,
         'padding': b.padding.toList(),
@@ -79,13 +97,20 @@ class Template {
             for (Schema s in b.staticSchema) s.toJson(),
           ],
       },
-      PdfFile f => 'data:application/pdf;base64,${base64.encode(f.bytes)}',
-    },
-    'schemas': <List<Map<String, Object?>>>[
-      for (List<Schema> page in schemas)
-        <Map<String, Object?>>[for (Schema s in page) s.toJson()],
-    ],
-  };
+      PdfFile f =>
+        sourceBase is String
+            ? sourceBase
+            : 'data:application/pdf;base64,${base64.encode(f.bytes)}',
+    };
+    return <String, Object?>{
+      ...?source,
+      'basePdf': base,
+      'schemas': <List<Map<String, Object?>>>[
+        for (List<Schema> page in schemas)
+          <Map<String, Object?>>[for (Schema s in page) s.toJson()],
+      ],
+    };
+  }
 
   static Sides _padding(List<Object?> p) => Sides(
     top: (p[0]! as num).toDouble(),

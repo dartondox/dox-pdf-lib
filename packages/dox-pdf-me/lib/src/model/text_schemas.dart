@@ -344,7 +344,7 @@ class SelectSchema extends TextSchema {
     super.borderColor,
     super.borderWidth,
     super.padding,
-    this.options = const <String>[],
+    this.options = const <String>['option1', 'option2'],
   });
 
   SelectSchema.fromJson(super.json)

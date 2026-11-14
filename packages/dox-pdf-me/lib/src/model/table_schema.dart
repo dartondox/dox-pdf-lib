@@ -78,8 +78,9 @@ class CellStyle {
     this.alternateBackgroundColor = '#f5f5f5',
   });
 
-  /// Reads a cell style. Missing values are the [CellStyle.body] values.
-  CellStyle.fromJson(Map<String, Object?> json)
+  /// Reads a cell style. Missing values are the [CellStyle.head] values
+  /// when [head] is true, else the [CellStyle.body] values.
+  CellStyle.fromJson(Map<String, Object?> json, {bool head = false})
     : fontName = _str(json['fontName']),
       alignment = _enum(Alignment.values, json['alignment'], Alignment.left),
       verticalAlignment = _enum(
@@ -90,12 +91,13 @@ class CellStyle {
       fontSize = _num(json['fontSize']) ?? 13,
       lineHeight = _num(json['lineHeight']) ?? 1,
       characterSpacing = _num(json['characterSpacing']) ?? 0,
-      fontColor = _str(json['fontColor']) ?? '#000000',
-      backgroundColor = _str(json['backgroundColor']) ?? '',
-      borderColor = _str(json['borderColor']) ?? '#888888',
+      fontColor = _str(json['fontColor']) ?? (head ? '#ffffff' : '#000000'),
+      backgroundColor =
+          _str(json['backgroundColor']) ?? (head ? '#2980ba' : ''),
+      borderColor = _str(json['borderColor']) ?? (head ? '' : '#888888'),
       borderWidth = json['borderWidth'] is Map
           ? Sides.fromJson(_map(json['borderWidth']))
-          : const Sides.all(0.1),
+          : (head ? Sides.zero : const Sides.all(0.1)),
       padding = json['padding'] is Map
           ? Sides.fromJson(_map(json['padding']))
           : const Sides.all(5),
@@ -242,26 +244,28 @@ class TableSchema extends Schema {
     super.readOnly,
     super.required,
     super.content,
-    this.head = const <String>[],
-    this.headWidthPercentages = const <double>[],
+    this.head = const <String>['Name', 'City', 'Description'],
+    List<double>? headWidthPercentages,
     this.showHead = true,
     this.repeatHead = false,
     this.tableStyles = const TableStyles(),
     this.headStyles = const CellStyle.head(),
     this.bodyStyles = const CellStyle.body(),
     this.columnStyles = const ColumnStyles(),
-  });
+  }) : _widths = headWidthPercentages;
 
   TableSchema.fromJson(super.json)
     : head = _strings(json['head']),
-      headWidthPercentages = <double>[
-        if (json['headWidthPercentages'] case List<Object?> l)
-          for (Object? p in l) _num(p) ?? 0,
-      ],
+      _widths = json['headWidthPercentages'] is List<Object?>
+          ? <double>[
+              for (Object? p in json['headWidthPercentages']! as List<Object?>)
+                _num(p) ?? 0,
+            ]
+          : null,
       showHead = json['showHead'] != false,
       repeatHead = json['repeatHead'] == true,
       tableStyles = TableStyles.fromJson(_map(json['tableStyles'])),
-      headStyles = CellStyle.fromJson(_map(json['headStyles'])),
+      headStyles = CellStyle.fromJson(_map(json['headStyles']), head: true),
       bodyStyles = CellStyle.fromJson(_map(json['bodyStyles'])),
       columnStyles = ColumnStyles.fromJson(_map(json['columnStyles'])),
       super.fromJson();
@@ -272,9 +276,19 @@ class TableSchema extends Schema {
   /// The head text of each column.
   final List<String> head;
 
+  final List<double>? _widths;
+
   /// The width of each column, in percent of the table width. One value
-  /// per column, eg. `[30, 70]`.
-  final List<double> headWidthPercentages;
+  /// per column, eg. `[30, 70]`. Not set: `[30, 30, 40]` for the default
+  /// head, else the same width for each column.
+  List<double> get headWidthPercentages =>
+      _widths ??
+      (head.length == 3 &&
+              head[0] == 'Name' &&
+              head[1] == 'City' &&
+              head[2] == 'Description'
+          ? const <double>[30, 30, 40]
+          : List<double>.filled(head.length, 100 / head.length));
 
   final bool showHead;
 

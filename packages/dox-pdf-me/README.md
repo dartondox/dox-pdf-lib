@@ -104,8 +104,10 @@ Uint8List pdf = await generate(
 - Each schema becomes its typed class. Eg. a `qrcode` schema is a
   `BarcodeSchema`. A type with no plugin is an `UnknownSchema`.
 - `toJson()` gives the JSON back. A schema read with `fromJson` keeps its
-  JSON map, also the keys this package does not know. So you can send the
-  template back to the frontend with no change.
+  JSON map, also the keys this package does not know. A template read with
+  `Template.fromJson` keeps its other keys too (eg. `pdfmeVersion`, and extra
+  keys of a blank `basePdf`). One change: the old format (each page a map)
+  comes back as the list format.
 - `GenerateOptions.fromJson` reads the pdfme options JSON.
 
 ### The base PDF

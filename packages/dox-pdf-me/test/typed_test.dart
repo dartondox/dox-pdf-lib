@@ -121,11 +121,7 @@ List<Case> cases() {
       '{"name": "Ann", "city": "Paris"}',
     ),
     (
-      const SelectSchema(
-        name: 'select',
-        position: Position(10, 45),
-        options: <String>['option1', 'option2'],
-      ),
+      const SelectSchema(name: 'select', position: Position(10, 45)),
       designer('select', 10, 45, <String, Object?>{
         ...textProps,
         'width': 45,
@@ -339,7 +335,6 @@ List<Case> cases() {
       const TableSchema(
         name: 'table',
         position: Position(10, 170),
-        head: <String>['Name', 'City', 'Description'],
         headWidthPercentages: <double>[30, 30, 40],
         columnStyles: ColumnStyles(
           alignment: <int, Alignment>{2: Alignment.right},
@@ -725,6 +720,79 @@ void main() {
       );
       expect((await PDFDocument.load(bytes)).getPageCount(), 1);
     });
+  });
+
+  test('a table with its own head but no widths splits 100 equally', () async {
+    TableSchema table = const TableSchema(
+      name: 'a',
+      position: Position(10, 10),
+      head: <String>['A', 'B'],
+    );
+    expect(table.headWidthPercentages, <double>[50, 50]);
+    expect(
+      await generate(
+        template: Template(
+          basePdf: const BlankPdf(),
+          schemas: <List<Schema>>[
+            <Schema>[table],
+          ],
+        ),
+        inputs: <Map<String, String>>[
+          <String, String>{
+            'a': jsonEncode(<List<String>>[
+              <String>['a', 'b'],
+            ]),
+          },
+        ],
+        plugins: builtInPlugins,
+      ),
+      isNotEmpty,
+    );
+    TableSchema plain = const TableSchema(
+      name: 'a',
+      position: Position(10, 10),
+    );
+    expect(plain.head, <String>['Name', 'City', 'Description']);
+    expect(plain.headWidthPercentages, <double>[30, 30, 40]);
+  });
+
+  test('a select has the designer options by default', () {
+    expect(
+      const SelectSchema(name: 's', position: Position(0, 0)).options,
+      <String>['option1', 'option2'],
+    );
+  });
+
+  test('fromJson of a table with no styles uses head and body defaults', () {
+    TableSchema t = TableSchema.fromJson(<String, Object?>{
+      'name': 't',
+      'type': 'table',
+      'position': <String, Object?>{'x': 0, 'y': 0},
+      'width': 100,
+      'height': 20,
+    });
+    expect(t.headStyles.fontColor, '#ffffff');
+    expect(t.headStyles.backgroundColor, '#2980ba');
+    expect(t.headStyles.borderWidth.top, 0);
+    expect(t.bodyStyles.fontColor, '#000000');
+    expect(t.bodyStyles.borderWidth.top, 0.1);
+  });
+
+  test('Template.toJson keeps pdfmeVersion and unknown basePdf keys', () {
+    Map<String, Object?> json = <String, Object?>{
+      'pdfmeVersion': '6.2.8',
+      'basePdf': <String, Object?>{
+        'width': 210,
+        'height': 297,
+        'padding': <int>[10, 10, 10, 10],
+        'fromTheFrontend': 'x',
+      },
+      'schemas': <Object?>[<Object?>[]],
+    };
+    Map<String, Object?> out = Template.fromJson(json).toJson();
+    expect(out['pdfmeVersion'], '6.2.8');
+    expect((out['basePdf']! as Map<String, Object?>)['fromTheFrontend'], 'x');
+    expect(Template.fromJson(out).toJson(), out);
   });
 
   test('a deep table input is a clear error, not a stack overflow', () {

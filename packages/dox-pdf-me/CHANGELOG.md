@@ -23,6 +23,12 @@
     `.time()` and `.dateTime()` are `DatePlugin()`, `TimePlugin()` and
     `DateTimePlugin()`, and `BarcodePlugin('qrcode')` is
     `BarcodePlugin(BarcodeType.qrcode)`.
+  - Custom plugins: the old `Schema` class, a wrapper of the JSON map with
+    `[]`, `string()`, `number()`, `boolean()` and `copyWith(Map)`, is gone.
+    `Schema` is now the typed base class. Extend it and read your keys in
+    a `fromJson` constructor. The JSON-map wrapper is internal now.
+  - `PdfLayout.of` takes the typed `Schema` (it took the old JSON-map
+    `Schema`).
   - `toJson()` and `fromJson()` on every schema. A schema read from JSON
     keeps its map, so `toJson()` gives the designer JSON back with no
     change, also keys this package does not know.
