@@ -7,4 +7,5 @@ export 'src/api/document.dart';
 export 'src/api/errors.dart';
 export 'src/api/operators.dart';
 export 'src/api/rotations.dart';
+export 'src/api/segment.dart';
 export 'src/api/sizes.dart';

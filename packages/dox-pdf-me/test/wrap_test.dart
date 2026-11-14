@@ -12,6 +12,42 @@ List<String> _texts(List<WrapLine> lines) =>
 
 void main() {
   group('wrapText (pdfme wrap.test.ts)', () {
+    test('breaks Thai, Lao, Khmer and Myanmar between words', () {
+      // the lines of pdfme 6.2.8 wrapTextToSize on Node.js 24 (ICU 78)
+      expect(
+        _texts(_wrap('ประเทศไทยเป็นประเทศในเอเชียตะวันออกเฉียงใต้', 40)),
+        <String>[
+          'ประเทศไท',
+          'ยเป็น',
+          'ประเทศใน',
+          'เอเชีย',
+          'ตะวันออก',
+          'เฉียงใต้',
+        ],
+      );
+      expect(_texts(_wrap('ພາສາລາວເປັນພາສາທາງການຂອງປະເທດລາວ', 40)), <String>[
+        'ພາສາລາວ',
+        'ເປັນພາສາ',
+        'ທາງການ',
+        'ຂອງປະເທດ',
+        'ລາວ',
+      ]);
+      expect(
+        _texts(_wrap('ភាសាខ្មែរជាភាសាផ្លូវការរបស់ប្រទេសកម្ពុជា', 50)),
+        <String>['ភាសាខ្មែរ', 'ជាភាសាផ្លូ', 'វការរបស់', 'ប្រទេស', 'កម្ពុជា'],
+      );
+      expect(_texts(_wrap('ကျွန်တော်ကျောင်းသွားတယ်', 50)), <String>[
+        'ကျွန်တော်',
+        'ကျောင်း',
+        'သွားတယ်',
+      ]);
+      expect(_texts(_wrap('เด็กๆ เล่นฟุตบอล', 30)), <String>[
+        'เด็กๆ',
+        'เล่น',
+        'ฟุตบอล',
+      ]);
+    });
+
     test('keeps König: together instead of orphaning the colon', () {
       List<String> lines = _texts(_wrap('Party-König: oder die', 55));
       expect(lines.any((String t) => t.startsWith(':')), isFalse);

@@ -40,6 +40,24 @@ const Map<String, (String, String)> testFonts = <String, (String, String)>{
         'unhinted/ttf/NotoSansThai-Regular.ttf',
     'd4303fe9c63ebb72759ca8b6d2040c8ae81689f7d08d7b91c656154382b49313',
   ),
+  'NotoSansLao-Regular.ttf': (
+    'https://raw.githubusercontent.com/notofonts/notofonts.github.io/'
+        '1daf901bd023a3811498e0b7e7284694ae06307e/fonts/NotoSansLao/'
+        'unhinted/ttf/NotoSansLao-Regular.ttf',
+    'd3976b0ac08702c54999ff42eae295d1597fd73b44e0c57d7f4917524e18afbe',
+  ),
+  'NotoSansKhmer-Regular.ttf': (
+    'https://raw.githubusercontent.com/notofonts/notofonts.github.io/'
+        '1daf901bd023a3811498e0b7e7284694ae06307e/fonts/NotoSansKhmer/'
+        'unhinted/ttf/NotoSansKhmer-Regular.ttf',
+    '60c10dbfae33a44f1897cd939789bd173aedb7c7dc0a9af389a737e33cb7e548',
+  ),
+  'NotoSansMyanmar-Regular.ttf': (
+    'https://raw.githubusercontent.com/notofonts/notofonts.github.io/'
+        '1daf901bd023a3811498e0b7e7284694ae06307e/fonts/NotoSansMyanmar/'
+        'unhinted/ttf/NotoSansMyanmar-Regular.ttf',
+    'f4be6ef43871516d8347c5217a2033991b8ecda2dd1200007c2fb431a66d64db',
+  ),
 };
 
 const String testFontDir = '.dart_tool/test_fonts';

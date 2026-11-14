@@ -1,11 +1,14 @@
 // Text wrapping, ported from pdfme (packages/schemas/src/text/wrap.ts,
 // git sha 60d73ae). Only the single-style path is ported.
 //
-// Break points come from UAX #14 (see line_break.dart). A word that fits on
+// Break points come from UAX #14 (see line_break.dart), plus the word ends
+// inside Thai, Lao, Khmer and Myanmar text from the ICU word dictionaries
+// (`dictionaryWordBreaks` of dox_pdf_lib). A word that fits on
 // a full line stays whole. A word wider than the box fills the rest of the
 // current line, then splits between graphemes.
 
 import 'package:characters/characters.dart';
+import 'package:dox_pdf_lib/dox_pdf_lib.dart' show dictionaryWordBreaks;
 
 import 'line_break.dart';
 
@@ -99,15 +102,25 @@ class _Atom {
   final bool required;
 }
 
-// pdfme also adds Thai/Lao/Khmer dictionary breaks here. Dart has no word
-// segmenter, so there are none.
+/// The UAX #14 breaks and the SA word breaks, sorted. A UAX #14 break keeps
+/// its `required` flag at the same position (pdfme `mergeBreaks`).
 List<_Atom> _getAtoms(String text) {
+  Map<int, bool> requiredAt = <int, bool>{
+    for (LineBreakOpportunity item in collectUax14Breaks(text))
+      item.position: item.required,
+  };
+  // pdfme collectSaDictionaryBreaks: Intl.Segmenter on each run of SA
+  // letters. dictionaryWordBreaks gives the same breaks for all runs at once.
+  for (int position in dictionaryWordBreaks(text)) {
+    requiredAt.putIfAbsent(position, () => false);
+  }
+  List<int> positions = requiredAt.keys.toList()..sort();
   List<_Atom> atoms = <_Atom>[];
   int previous = 0;
-  for (LineBreakOpportunity item in collectUax14Breaks(text)) {
-    if (item.position <= previous) continue;
-    atoms.add(_Atom(item.position - previous, required: item.required));
-    previous = item.position;
+  for (int position in positions) {
+    if (position <= previous) continue;
+    atoms.add(_Atom(position - previous, required: requiredAt[position]!));
+    previous = position;
   }
   if (previous < text.length) {
     atoms.add(_Atom(text.length - previous, required: true));

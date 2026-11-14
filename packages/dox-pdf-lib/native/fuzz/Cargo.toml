@@ -25,6 +25,8 @@ harfrust = "0.16.0"
 read-fonts = "0.47.0"
 subsetter = { version = "0.2.6", default-features = false }
 unicode-bidi = "0.3.18"
+icu_segmenter = { version = "2.4.0", default-features = false, features = ["compiled_data"] }
+icu_provider = { version = "2.4.0", default-features = false }
 
 # the source of native/ has `#[cfg(fuzzing)]`, which cargo fuzz sets
 [lints.rust]
@@ -58,6 +60,13 @@ bench = false
 [[bin]]
 name = "svg"
 path = "fuzz_targets/svg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "segment"
+path = "fuzz_targets/segment.rs"
 test = false
 doc = false
 bench = false

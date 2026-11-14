@@ -47,6 +47,11 @@ The paths are in `packages/dox-pdf-me`.
   compares the pages pixel by pixel. With `zbarimg` (zbar-tools) it also
   decodes the 2D codes. Without node_modules the test is skipped. CI always
   runs it. Add a case there for every new feature.
+- Thai, Lao, Khmer and Myanmar word breaks: `test/fixtures/sa_word_breaks.json`
+  holds pdfme's breaks for the sentences of `tool/crosscheck/sa_text.mjs`.
+  Make it again with `node tool/crosscheck/word_breaks.mjs
+  test/fixtures/sa_word_breaks.json` (Node.js 24, after `npm ci`). The ICU
+  of Node.js decides the words, so do not use another Node.js version.
 
 ## dox_pdf_lib
 
@@ -65,7 +70,7 @@ without merge conflicts.
 
 **One file per feature area.**
 
-- Rust: `native/src/<area>.rs`. Now: `ffi_util.rs`, `document.rs`, `page.rs`, `metadata.rs`. Later eg. `draw.rs`, `font.rs` (with `custom_font.rs`), `image.rs`, `form.rs`, `attachment.rs`, `embed.rs`.
+- Rust: `native/src/<area>.rs`. Now: `ffi_util.rs`, `document.rs`, `page.rs`, `metadata.rs`. Later eg. `draw.rs`, `font.rs` (with `custom_font.rs`), `image.rs`, `form.rs`, `attachment.rs`, `embed.rs`, `segment.rs` (word breaks, no document).
 - Dart bindings: `lib/src/ffi/<area>_bindings.dart`.
 - Dart API: `lib/src/api/<area>.dart`. Code that needs the private parts of `PDFDocument` or `PDFPage` (eg. the handle) is a `part of 'document.dart'`, often an `extension` on `PDFDocument` or `PDFPage` (see `metadata.dart`).
 - `native/src/lib.rs`, the `part` list in `lib/src/api/document.dart` and `lib/dox_pdf_lib.dart` are short lists. A new area adds one line to each.

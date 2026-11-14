@@ -161,7 +161,10 @@ The text props work like in pdfme: `fontName`, `fontSize`, `alignment`
 `middle`, `bottom`), `lineHeight`, `characterSpacing`, `fontColor`,
 `backgroundColor`, `borderColor`, `borderWidth`, `padding`, `underline`,
 `strikethrough` and `dynamicFontSize` (`min`, `max`, `fit`). Long text wraps
-with the same line break rules as pdfme (Unicode line breaking).
+with the same line break rules as pdfme (Unicode line breaking). Thai, Lao,
+Khmer and Myanmar text breaks between words, like in pdfme: the words come
+from the same ICU word lists as in Node.js 24 (`dictionaryWordBreaks` of
+dox_pdf_lib).
 
 `table` and `multiVariableText` are not supported yet.
 
@@ -208,12 +211,12 @@ This list compares with pdfme 6.2.8.
     columns. The size, place and data are the same, and scanners read them.
   - Code 128 can pick other code sets for some texts. The data is the same.
 - **SVG:** `fill-rule="evenodd"` fills like `nonzero`.
-- **Thai, Lao, Khmer and Myanmar** line breaks: pdfme breaks inside words
-  with a dictionary of the browser or Node.js. Dart has no such dictionary,
-  so these scripts break only at spaces, or between letters when a word is
-  too long for the box.
 - **Complex scripts** (Thai, Arabic, Hindi, ...) are drawn with HarfBuzz
-  rules (see dox_pdf_lib). Mark positions can be a little different.
+  rules (see dox_pdf_lib). Mark positions can be a little different. For
+  Myanmar, the widths can differ by a few percent (pdfme's fontkit does not
+  shape Myanmar fully), so a `dynamicFontSize` box can get another size.
+- **Word breaks** of Thai, Lao, Khmer and Myanmar match pdfme on Node.js 24
+  (ICU 78). Another Node.js version or a browser can have other word lists.
 - **Missing letters** in a font: their width is the real width of the empty
   box glyph. pdfme gives them no width in the PDF, so a viewer draws them
   wider than pdfme measured.

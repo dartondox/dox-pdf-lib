@@ -1,5 +1,6 @@
 ## Unreleased
 
+- New: `dictionaryWordBreaks(text)` gives the word breaks inside Thai, Lao, Khmer and Myanmar text, the same as `Intl.Segmenter` of Node.js and browsers (ICU word lists and break rules). It is an extra, not part of pdf-lib. The native library is about 1 MB bigger.
 - The ready-built libraries now come from the GitHub release with the tag `dox_pdf_lib-v<version>` (it was `v<version>`). The repo is now a workspace with more packages, and each package has its own tags.
 
 ## 0.0.1
