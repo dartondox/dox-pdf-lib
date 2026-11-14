@@ -21,6 +21,7 @@
 //   decoded with zbarimg when it is installed.
 
 import { saSentences } from './sa_text.mjs';
+import { tableCases } from './table_cases.mjs';
 
 const blank = (staticSchema) => ({
   width: 150,
@@ -426,3 +427,5 @@ cases.push({
   },
   inputs: [{ title: 'Legacy template' }],
 });
+
+cases.push(...tableCases);

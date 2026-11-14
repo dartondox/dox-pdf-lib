@@ -31,6 +31,7 @@ const plugins = {
   checkbox: schemas.checkbox,
   radioGroup: schemas.radioGroup,
   select: schemas.select,
+  table: schemas.table,
 };
 
 function readFile(name) {
@@ -54,8 +55,12 @@ function resolve(value) {
   return value;
 }
 
-writeFileSync(join(outDir, 'cases.json'), JSON.stringify(cases, null, 1));
-for (const c of cases) {
+// ONLY=<prefix>: render only the cases whose name starts with it
+const only = process.env.ONLY;
+const picked = only ? cases.filter((c) => c.name.startsWith(only)) : cases;
+
+writeFileSync(join(outDir, 'cases.json'), JSON.stringify(picked, null, 1));
+for (const c of picked) {
   const pdf = await generate({
     template: resolve(c.template),
     inputs: resolve(c.inputs),
@@ -64,4 +69,4 @@ for (const c of cases) {
   });
   writeFileSync(join(outDir, `${c.name}.pdf`), pdf);
 }
-console.log(`rendered ${cases.length} cases`);
+console.log(`rendered ${picked.length} cases`);

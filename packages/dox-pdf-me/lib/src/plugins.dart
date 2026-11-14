@@ -5,6 +5,7 @@ import 'schemas/image_plugin.dart';
 import 'schemas/select_plugin.dart';
 import 'schemas/shape_plugins.dart';
 import 'svg/svg_plugin.dart';
+import 'table/table_plugin.dart';
 import 'text/text_plugin.dart';
 
 /// The plugins `generate` uses when you pass none: only `text`, like
@@ -40,6 +41,7 @@ const Map<String, SchemaPlugin> builtInPlugins = <String, SchemaPlugin>{
   'Checkbox': CheckboxPlugin(),
   'RadioGroup': RadioGroupPlugin(),
   'Select': SelectPlugin(),
+  'Table': TablePlugin(),
 };
 
 /// The first plugin of [plugins] for schema [type], like pdfme's

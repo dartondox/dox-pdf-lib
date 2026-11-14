@@ -155,6 +155,7 @@ dox_pdf_lib API, so one import is enough.
 | `date`, `time`, `dateTime` | `DatePlugin.date()`, `.time()`, `.dateTime()` |
 | `checkbox`, `radioGroup` | `CheckboxPlugin`, `RadioGroupPlugin` |
 | `select` | `SelectPlugin` |
+| `table` | `TablePlugin` |
 
 The text props work like in pdfme: `fontName`, `fontSize`, `alignment`
 (`left`, `center`, `right`, `justify`), `verticalAlignment` (`top`,
@@ -166,7 +167,21 @@ Khmer and Myanmar text breaks between words, like in pdfme: the words come
 from the same ICU word lists as in Node.js 24 (`dictionaryWordBreaks` of
 dox_pdf_lib).
 
-`table` and `multiVariableText` are not supported yet.
+A `table` value is a JSON string of rows, eg. `[["Alice","Paris"]]` (a
+list of lists works too). The props work like in pdfme: `head`,
+`showHead`, `repeatHead`, `headWidthPercentages`, `tableStyles`
+(`borderColor`, `borderWidth`), `headStyles` and `bodyStyles` (cell
+styles; `bodyStyles` also has `alternateBackgroundColor`) and
+`columnStyles` (`alignment` and `verticalAlignment` per column). A cell
+style has the text props plus `borderWidth` and `padding` per side. A
+read-only table uses its input when there is one, else its `content`.
+
+On a blank base PDF, a table that is taller than its box grows. The
+schemas below it move down, and the table goes on over new pages (pdfme's
+dynamic layout). On a PDF base, the table draws its full height on the
+same page, like pdfme.
+
+`multiVariableText` is not supported yet.
 
 ## Fonts
 
@@ -229,8 +244,14 @@ This list compares with pdfme 6.2.8.
   like `{name}`, `{order.id}`, `{currentPage}`, `{totalPages}`, `{date}` and
   `{dateTime}`. pdfme also runs JavaScript expressions, like `{price * 2}`.
   Those stay as they are.
-- **Not supported yet:** `overflow: "expand"` (the text box does not grow),
-  inline markdown text, tables, `multiVariableText`, font URLs, base PDFs
+- **Tables:** image cells (`columnStyles.cellType: "image"`) are not
+  supported yet; the cell shows the value as text. A column without a
+  width in `headWidthPercentages` gets a share of the rest of the table
+  width (pdfme gives it no width). A row with fewer cells than the head
+  gets empty cells (pdfme throws).
+- **Not supported yet:** `overflow: "expand"` (the text box does not grow,
+  and it does not move other schemas), `list`, inline markdown text,
+  `multiVariableText`, font URLs, base PDFs
   with a user password (`basePdfPassword`), and link annotations of the base PDF.
 - **EXIF orientation** of JPEG and PNG images works like in pdfme. pdfme
   turns the pixels and encodes a JPEG again; this package keeps the file and

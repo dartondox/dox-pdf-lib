@@ -19,5 +19,6 @@ export 'src/schemas/select_plugin.dart';
 export 'src/schemas/shape_plugins.dart';
 export 'src/svg/svg_plugin.dart'
     show CheckboxPlugin, RadioGroupPlugin, SvgPlugin;
+export 'src/table/table_plugin.dart';
 export 'src/template.dart';
 export 'src/text/text_plugin.dart';

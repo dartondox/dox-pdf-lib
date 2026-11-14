@@ -107,6 +107,7 @@ void main() {
           'checkbox',
           'radioGroup',
           'select',
+          'table',
         },
       );
     });
