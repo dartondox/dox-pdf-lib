@@ -22,6 +22,7 @@ const int statusEmptyRemove = 5;
 const int statusNotFound = 6;
 const int statusParse = 7;
 const int statusDisposed = 8;
+const int statusMissingContents = 20;
 
 /// The `Bytes` record of Rust (`ffi_util.rs`).
 final class NativeBytes extends Struct {
@@ -74,6 +75,7 @@ Never throwStatus(int status, String message) {
     statusEmptyRemove => RemovePageFromEmptyDocumentError(),
     statusParse => PDFParsingError(message),
     statusDisposed => StateError('The PDFDocument was disposed.'),
+    statusMissingContents => MissingPageContentsEmbeddingError(),
     _ => PDFLibError(message),
   };
 }

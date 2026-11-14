@@ -151,7 +151,7 @@ pub extern "C" fn dox_pdf_page_set_box(
     height: f64,
 ) -> i32 {
     call(|| {
-        with_doc(handle, |d| {
+        with_doc_mut(handle, |d| {
             set_box(&mut d.pdf, ref_from_i64(page), kind, [x, y, width, height]).map(|_| OK)
         })
     })
@@ -160,7 +160,7 @@ pub extern "C" fn dox_pdf_page_set_box(
 #[unsafe(no_mangle)]
 pub extern "C" fn dox_pdf_page_set_size(handle: *const c_void, page: i64, width: f64, height: f64, keep: i32) -> i32 {
     call(|| {
-        with_doc(handle, |d| {
+        with_doc_mut(handle, |d| {
             set_size(&mut d.pdf, ref_from_i64(page), width, height, keep).map(|_| OK)
         })
     })
@@ -180,7 +180,7 @@ pub extern "C" fn dox_pdf_page_get_rotation(handle: *const c_void, page: i64, ou
 #[unsafe(no_mangle)]
 pub extern "C" fn dox_pdf_page_set_rotation(handle: *const c_void, page: i64, degrees: f64) -> i32 {
     call(|| {
-        with_doc(handle, |d| {
+        with_doc_mut(handle, |d| {
             set_rotation(&mut d.pdf, ref_from_i64(page), degrees).map(|_| OK)
         })
     })
