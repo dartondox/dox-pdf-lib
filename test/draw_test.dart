@@ -166,8 +166,9 @@ void main() {
     PDFDocument other = await PDFDocument.create();
     PDFFont foreign = other.embedStandardFont(StandardFonts.courier);
     expect(() => page.drawText('a', font: foreign), throwsArgumentError);
-    page.setFont(foreign);
-    expect(() => page.drawText('a'), throwsArgumentError);
+    expect(() => page.setFont(foreign), throwsArgumentError);
+    // the page font did not change, so drawing still works
+    page.drawText('a');
     PDFImage image = await other.embedJpg(_fixture('rgb.jpg'));
     expect(() => page.drawImage(image), throwsArgumentError);
   });

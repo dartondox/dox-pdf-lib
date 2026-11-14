@@ -129,7 +129,20 @@ extension PDFPageDrawing on PDFPage {
       ..y = 0;
   }
 
-  void setFont(PDFFont font) => _state.font = font;
+  void setFont(PDFFont font) {
+    _checkFont(font);
+    _state.font = font;
+  }
+
+  void _checkFont(PDFFont font) {
+    if (font.doc != doc) {
+      throw ArgumentError.value(
+        font.name,
+        'font',
+        'is from a different PDFDocument; embed it in this one',
+      );
+    }
+  }
 
   void setFontSize(double fontSize) => _state.fontSize = fontSize;
 
@@ -194,13 +207,7 @@ extension PDFPageDrawing on PDFPage {
   }) {
     _TextState s = _state;
     PDFFont f = font ?? _font();
-    if (f.doc != doc) {
-      throw ArgumentError.value(
-        f.name,
-        'font',
-        'is from a different PDFDocument; embed it in this one',
-      );
-    }
+    _checkFont(f);
     // pdf-lib: `options.size || this.fontSize`
     double fontSize = (size == null || size == 0 || size.isNaN)
         ? s.fontSize
