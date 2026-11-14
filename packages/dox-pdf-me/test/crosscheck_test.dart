@@ -19,15 +19,28 @@ import 'support.dart';
 const String outDir = '.dart_tool/crosscheck';
 const String fixtureDir = 'test/fixtures/crosscheck';
 
-/// The largest share of pixels that may differ, per kind of case.
-const Map<String, double> tolerance = <String, double>{
-  'pixels': 0.004,
-  'barcode': 0.03,
-  'reencoded': 0.02,
-  'pdf417': 0.004,
-  'matrix': 0.06,
-  'lines': 0.1,
-};
+/// The pages are rendered at this resolution (1 pixel is 0.13 mm).
+const int dpi = 200;
+
+/// The limits of one schema box: the largest move of an edge of its ink box
+/// (mm) and the largest share of its pixels that may differ.
+(double, double) _limit(String compare, String type) {
+  // other shaping (HarfBuzz here, fontkit in pdfme): marks sit elsewhere
+  if (compare == 'lines') return (3, 0.2);
+  // pdfme encodes these images again as JPEG
+  if (compare == 'reencoded') return (0.3, 0.02);
+  // the text under the bars is Helvetica here, OCR-B in pdfme; the bars
+  // are checked on their own (see _barDifference)
+  if (_linear.contains(type)) return (0.3, 0.08);
+  return (0.3, 0.01);
+}
+
+/// The linear barcode types.
+final Set<String> _linear = barcodeTypes.toSet().difference(<String>{
+  'qrcode',
+  'gs1datamatrix',
+  'pdf417',
+});
 
 void main() {
   bool ready = hasPdfme && hasTool('pdftoppm');
@@ -60,6 +73,7 @@ void main() {
 
   test('every case looks like pdfme', () async {
     List<String> failures = <String>[];
+    StringBuffer report = StringBuffer();
     for (Map<String, dynamic> c in cases) {
       String name = c['name'] as String;
       String compare = c['compare'] as String;
@@ -76,15 +90,18 @@ void main() {
       List<Ppm> ours = renderPages(
         '$outDir/dox/$name.pdf',
         '$outDir/png/$name/dox',
+        dpi: dpi,
       );
       List<Ppm> theirs = renderPages(
         '$outDir/pdfme/$name.pdf',
         '$outDir/png/$name/pdfme',
+        dpi: dpi,
       );
       if (ours.length != theirs.length) {
         failures.add('$name: ${ours.length} pages, pdfme ${theirs.length}');
         continue;
       }
+      List<List<Map<String, dynamic>>> pageSchemas = _pageSchemas(c);
       for (int p = 0; p < ours.length; p++) {
         Ppm a = ours[p];
         Ppm b = theirs[p];
@@ -95,14 +112,38 @@ void main() {
           );
           continue;
         }
-        double diff = pixelDifference(a, b);
-        double limit = tolerance[compare]!;
-        printOnFailure('$name page $p: ${(diff * 100).toStringAsFixed(3)} %');
-        if (diff > limit) {
+        // the whole page too, for marks outside the boxes
+        double page = pixelDifference(a, b);
+        report.writeln('$name p$p: ${(page * 100).toStringAsFixed(2)} %');
+        double pageLimit = switch (compare) {
+          'lines' => 0.1,
+          'barcode' => 0.03,
+          _ => 0.01,
+        };
+        if (page > pageLimit) {
           failures.add(
-            '$name page $p: ${(diff * 100).toStringAsFixed(3)} % '
-            'of the pixels differ (limit ${limit * 100} %)',
+            '$name page $p: ${(page * 100).toStringAsFixed(2)} % '
+            'of the pixels differ',
           );
+        }
+        for (Map<String, dynamic> s in pageSchemas[p % pageSchemas.length]) {
+          String type = s['type'] as String;
+          FieldDiff d = fieldDifference(a, b, s, dpi);
+          (double, double) limit = _limit(compare, type);
+          String row =
+              '$name p$p ${s['name']} ($type): '
+              'ink ${d.ink.toStringAsFixed(2)} mm, '
+              'pixels ${(d.pixels * 100).toStringAsFixed(2)} % '
+              '${d.inkA?.map(_mm).toList()} pdfme ${d.inkB?.map(_mm).toList()}';
+          report.writeln(row);
+          if (d.ink > limit.$1 || d.pixels > limit.$2) {
+            failures.add('$row (limit ${limit.$1} mm, ${limit.$2 * 100} %)');
+          }
+          (String, bool)? bars = _barDifference(a, b, s, type);
+          if (bars != null) {
+            report.writeln('$name p$p ${s['name']} ($type): ${bars.$1}');
+            if (!bars.$2) failures.add('$name p$p ${s['name']}: ${bars.$1}');
+          }
         }
       }
       if (compare == 'lines') {
@@ -128,8 +169,13 @@ void main() {
             !a.contains('QR-Code:https://github.com/dartondox/dox-pdf-lib')) {
           failures.add('$name: the first QR code was not decoded: $a');
         }
+        // the exact text must come back
+        for (Object? text in c['decoded'] as List<dynamic>? ?? <dynamic>[]) {
+          if (!a.contains(text)) failures.add('$name: $text not decoded: $a');
+        }
       }
     }
+    File('$outDir/report.txt').writeAsStringSync(report.toString());
     expect(failures, isEmpty);
   }, skip: ready ? false : 'needs npm ci in tool/crosscheck and pdftoppm');
 }
@@ -216,4 +262,49 @@ Object? _resolve(Object? value) {
     for (MapEntry<dynamic, dynamic> e in value.entries)
       '${e.key}': _resolve(e.value),
   };
+}
+
+String _mm(double v) => v.toStringAsFixed(2);
+
+/// The schemas of each page of the template of case [c]: the schemas of
+/// the page and the static schemas of a blank base PDF.
+List<List<Map<String, dynamic>>> _pageSchemas(Map<String, dynamic> c) {
+  Map<String, dynamic> template = c['template'] as Map<String, dynamic>;
+  Object? base = template['basePdf'];
+  List<dynamic> statics = base is Map && base['staticSchema'] is List
+      ? base['staticSchema'] as List<dynamic>
+      : const <dynamic>[];
+  return <List<Map<String, dynamic>>>[
+    for (Object? page in template['schemas'] as List<dynamic>)
+      <Map<String, dynamic>>[
+        for (Object? s in <Object?>[
+          ...(page is Map ? page.values : page! as List<dynamic>),
+          ...statics,
+        ])
+          s! as Map<String, dynamic>,
+      ],
+  ];
+}
+
+/// Compares the bars of a linear barcode box on a line across the bars:
+/// every edge must be at the same place (vector bars here, an SVG in
+/// pdfme). Null for other types; else what was found, and true when it
+/// matches.
+(String, bool)? _barDifference(
+  Ppm a,
+  Ppm b,
+  Map<String, dynamic> s,
+  String type,
+) {
+  if (!_linear.contains(type)) return null;
+  // Japan Post: the middle line crosses every bar
+  double v = type == 'japanpost' ? 0.5 : 0.2;
+  List<double> x = scanEdges(a, s, dpi, v);
+  List<double> y = scanEdges(b, s, dpi, v);
+  double e = edgeDifference(x, y);
+  return (
+    'bars: ${x.length} edges, pdfme ${y.length}, '
+        'moved up to ${e.toStringAsFixed(2)} mm',
+    e <= 0.13,
+  );
 }

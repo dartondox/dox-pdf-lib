@@ -2,6 +2,7 @@
 // comparing pages.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -155,4 +156,152 @@ double pixelDifference(Ppm a, Ppm b, {int threshold = 48}) {
     }
   }
   return differ / (x.length / 3);
+}
+
+/// How one schema box looks in two renders of the same page.
+class FieldDiff {
+  FieldDiff(this.ink, this.pixels, this.inkA, this.inkB);
+
+  /// The largest move (mm) of one edge of the ink box: the box around the
+  /// pixels that are not white. Shows a field that is shorter, narrower or
+  /// in another place.
+  final double ink;
+
+  /// The share of the pixels of the box (0 to 1) that differ.
+  final double pixels;
+
+  /// The ink boxes (left, top, right, bottom in mm) of each render.
+  final List<double>? inkA;
+  final List<double>? inkB;
+}
+
+/// Compares the box of [schema] (a pdfme schema in mm) in the pages [a] and
+/// [b], rendered at [dpi]. The box turns around its center by `rotate`, and
+/// gets a margin of [margin] mm.
+FieldDiff fieldDifference(
+  Ppm a,
+  Ppm b,
+  Map<String, dynamic> schema,
+  int dpi, {
+  double margin = 1,
+  int threshold = 48,
+}) {
+  double px = dpi / 25.4;
+  Map<String, dynamic> pos = schema['position'] as Map<String, dynamic>;
+  double x = (pos['x'] as num).toDouble();
+  double y = (pos['y'] as num).toDouble();
+  double w = (schema['width'] as num).toDouble();
+  double h = (schema['height'] as num).toDouble();
+  double r = ((schema['rotate'] as num?) ?? 0) * math.pi / 180;
+  double bw = (w * math.cos(r)).abs() + (h * math.sin(r)).abs();
+  double bh = (w * math.sin(r)).abs() + (h * math.cos(r)).abs();
+  double cx = x + w / 2;
+  double cy = y + h / 2;
+  int left = math.max(0, ((cx - bw / 2 - margin) * px).floor());
+  int top = math.max(0, ((cy - bh / 2 - margin) * px).floor());
+  int right = math.min(a.width, ((cx + bw / 2 + margin) * px).ceil());
+  int bottom = math.min(a.height, ((cy + bh / 2 + margin) * px).ceil());
+  if (right <= left || bottom <= top) return FieldDiff(0, 0, null, null);
+  int differ = 0;
+  for (int j = top; j < bottom; j++) {
+    for (int i = left; i < right; i++) {
+      int k = (j * a.width + i) * 3;
+      for (int c = 0; c < 3; c++) {
+        if ((a.pixels[k + c] - b.pixels[k + c]).abs() > threshold) {
+          differ++;
+          break;
+        }
+      }
+    }
+  }
+  List<double>? inkA = a.inkBox(left, top, right, bottom, px);
+  List<double>? inkB = b.inkBox(left, top, right, bottom, px);
+  double ink = 0;
+  if ((inkA == null) != (inkB == null)) {
+    ink = double.infinity;
+  } else if (inkA != null) {
+    for (int i = 0; i < 4; i++) {
+      ink = math.max(ink, (inkA[i] - inkB![i]).abs());
+    }
+  }
+  return FieldDiff(ink, differ / ((right - left) * (bottom - top)), inkA, inkB);
+}
+
+extension on Ppm {
+  /// The box (left, top, right, bottom in mm) around the pixels in the
+  /// given pixel area with a channel below 240; null when there are none.
+  List<double>? inkBox(int left, int top, int right, int bottom, double px) {
+    int l = right, t = bottom, r = left - 1, b = top - 1;
+    for (int j = top; j < bottom; j++) {
+      for (int i = left; i < right; i++) {
+        int k = (j * width + i) * 3;
+        if (pixels[k] < 240 || pixels[k + 1] < 240 || pixels[k + 2] < 240) {
+          if (i < l) l = i;
+          if (i > r) r = i;
+          if (j < t) t = j;
+          if (j > b) b = j;
+        }
+      }
+    }
+    if (r < l) return null;
+    return <double>[l / px, t / px, (r + 1) / px, (b + 1) / px];
+  }
+}
+
+/// The edges (mm from the left side of the box) of the dark parts on one
+/// line across the box of [schema]: the line at [v] (0 top, 1 bottom) of the
+/// box height, in the box's own (turned) axes. Dark is darker than the
+/// middle of the lightest and darkest pixels of the line.
+List<double> scanEdges(
+  Ppm page,
+  Map<String, dynamic> schema,
+  int dpi,
+  double v,
+) {
+  double px = dpi / 25.4;
+  Map<String, dynamic> pos = schema['position'] as Map<String, dynamic>;
+  double w = (schema['width'] as num).toDouble();
+  double h = (schema['height'] as num).toDouble();
+  double cx = (pos['x'] as num).toDouble() + w / 2;
+  double cy = (pos['y'] as num).toDouble() + h / 2;
+  double r = ((schema['rotate'] as num?) ?? 0) * math.pi / 180;
+  double step = 0.25 / px;
+  List<int> light = <int>[];
+  for (double t = 0; t <= w; t += step) {
+    double lx = t - w / 2;
+    double ly = v * h - h / 2;
+    int x = ((cx + lx * math.cos(r) - ly * math.sin(r)) * px).floor();
+    int y = ((cy + lx * math.sin(r) + ly * math.cos(r)) * px).floor();
+    if (x < 0 || y < 0 || x >= page.width || y >= page.height) {
+      light.add(255);
+      continue;
+    }
+    int k = (y * page.width + x) * 3;
+    light.add(
+      (page.pixels[k] * 3 + page.pixels[k + 1] * 6 + page.pixels[k + 2]) ~/ 10,
+    );
+  }
+  int lo = light.reduce(math.min);
+  int hi = light.reduce(math.max);
+  if (hi - lo < 40) return <double>[];
+  int mid = (lo + hi) ~/ 2;
+  List<double> edges = <double>[];
+  bool dark = false;
+  for (int i = 0; i < light.length; i++) {
+    bool d = light[i] < mid;
+    if (d != dark) edges.add(i * step);
+    dark = d;
+  }
+  return edges;
+}
+
+/// The largest move (mm) between the edges [a] and [b]; infinity when they
+/// do not have the same count.
+double edgeDifference(List<double> a, List<double> b) {
+  if (a.length != b.length) return double.infinity;
+  double most = 0;
+  for (int i = 0; i < a.length; i++) {
+    most = math.max(most, (a[i] - b[i]).abs());
+  }
+  return most;
 }

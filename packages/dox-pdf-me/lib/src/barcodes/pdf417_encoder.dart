@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'barcode_symbol.dart';
+import 'barcode_validator.dart';
 import 'pdf417_clusters.dart';
 
 /// PDF417 like BWIPP (bwip-js 4.11.4), so the symbol is the same as in
@@ -14,14 +15,20 @@ import 'pdf417_clusters.dart';
 class Pdf417Encoder {
   Pdf417Encoder._(this._msg);
 
-  /// The module grid of [value], or null when BWIPP can not encode it (no
-  /// data, or too much data).
-  static Pdf417Symbol? encode(String value) {
+  /// The module grid of [value] (not empty). Throws a
+  /// [BarcodeInputException] with the bwip-js message when there is too
+  /// much data.
+  static Pdf417Symbol encode(String value) {
     // bwip-js sends text with non-ASCII letters as UTF-8 bytes
     List<int> msg = utf8.encode(value);
-    if (msg.isEmpty || msg.length > 2713) return null;
+    if (msg.length > 2713) {
+      _tooMuch('pdf417inputTooLong#22902', 'The input data is too long');
+    }
     return Pdf417Encoder._(msg)._symbol();
   }
+
+  static Never _tooMuch(String name, String info) =>
+      throw BarcodeInputException.bwipp(name, info);
 
   final List<int> _msg;
 
@@ -145,10 +152,10 @@ class Pdf417Encoder {
 
   int _submode = _a;
 
-  Pdf417Symbol? _symbol() {
+  Pdf417Symbol _symbol() {
     List<int> data = _dataCodewords();
     int m = data.length;
-    if (m > 926) return null;
+    if (m > 926) _tooMuch('pdf417dataTooLong#23301', 'The data is too long');
     int eclevel = m <= 40
         ? 2
         : m <= 160
@@ -163,7 +170,12 @@ class Pdf417Encoder {
     int c = math.max(columns, 1);
     int r = ((m + k + 1) / columns).ceil();
     if (r < 3) r = 3;
-    if (r > 90) return null;
+    if (r > 90) {
+      _tooMuch(
+        'pdf417insufficientCapacity#23340',
+        'Insufficient capacity in the symbol',
+      );
+    }
     // a higher level when the matrix has room for it
     maxLevel = math.min((math.log(c * r - 1 - m) / math.ln2).truncate() - 1, 8);
     if (maxLevel > eclevel) {
@@ -171,7 +183,12 @@ class Pdf417Encoder {
       k = 1 << (eclevel + 1);
     }
     int n = c * r - k;
-    if (n > 928) return null;
+    if (n > 928) {
+      _tooMuch(
+        'pdf417insufficientCapacity#23368',
+        'Insufficient capacity in the symbol',
+      );
+    }
     List<int> cws = <int>[
       n,
       ...data,

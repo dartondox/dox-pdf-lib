@@ -94,7 +94,8 @@ class BwipRaster {
     return BarcodeSymbol(
       width: (b.maxX - b.minX + 1).toDouble(),
       height: (b.maxY - b.minY + 1).toDouble(),
-      rects: frame == null ? const <BarcodeRect>[] : frame.bands(b),
+      rects: const <BarcodeRect>[],
+      border: frame == null ? const <BarcodeRect>[] : frame.bands(b),
       bars: strokes,
       text: text == null
           ? null

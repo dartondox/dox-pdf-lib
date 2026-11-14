@@ -1,0 +1,417 @@
+[
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(10)ABCDEFGHIJKLMNOPQRSTU",
+  "message": "bwipp.GS1valueTooLong#3845: AI 10: Too long"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(21)ABCDEFGHIJKLMNOPQRST",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(99)abc def",
+  "message": "bwipp.GS1badCSET82character#3204: AI 99: Invalid CSET 82 character"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(10)a~b",
+  "message": "bwipp.GS1badCSET82character#3204: AI 10: Invalid CSET 82 character"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(11)241399",
+  "message": "bwipp.GS1badMonth#3346: AI 11: Invalid month"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(11)240230",
+  "message": "bwipp.GS1badDay#3352: AI 11: Invalid day of month"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(11)240229",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(15)250229",
+  "message": "bwipp.GS1badDay#3352: AI 15: Invalid day of month"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(17)251300",
+  "message": "bwipp.GS1badMonth#3346: AI 17: Invalid month"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(17)251200",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(7006)240231",
+  "message": "bwipp.GS1badDay#3352: AI 7006: Invalid day of month"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(4324)2401012560",
+  "message": "bwipp.GS1badHour#3387: AI 4324: Invalid hour of day"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(4324)2401012359",
+  "message": "bwipp.GS1missingAIs#3967: One of more requisite AIs for AI (4324) are missing: 00"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(777)1",
+  "message": "bwipp.GS1unknownAI#3870: AI 777: Unrecognised AI"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(10)A(10)B",
+  "message": "bwipp.GS1repeatedDifferingAIs#3920: Repeated AIs (10) must have the same value"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(10)A(10)A",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(02)09521234543213",
+  "message": "bwipp.GS1exclusiveAIs#3940: AIs (02) and (01) are mutually exclusive"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(00)095212345432134567",
+  "message": "bwipp.GS1badChecksum#3251: AI 00: Bad checksum"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(00)095212345432134568",
+  "message": "bwipp.GS1badChecksum#3251: AI 00: Bad checksum"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(3103)000123(3102)000456",
+  "message": "bwipp.GS1exclusiveAIs#3940: AIs (3103) and (310n) are mutually exclusive"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(3103)000123(3203)000456",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(422)528",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(422)999",
+  "message": "bwipp.GS1UnknownCountry#3279: AI 422: Unknown country code"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(422)52",
+  "message": "bwipp.GS1valueTooShort#3842: AI 422: Too short"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8008)24010112",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8008)240101",
+  "message": "bwipp.GS1valueTooShort#3842: AI 8008: Too short"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8008)2401011",
+  "message": "bwipp.GS1valueTooShort#3842: AI 8008: Too short"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(3910)9781",
+  "message": "bwipp.GS1missingAIs#3967: One of more requisite AIs for AI (3910) are missing: 8020"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(3910)978123",
+  "message": "bwipp.GS1missingAIs#3967: One of more requisite AIs for AI (3910) are missing: 8020"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8007)DE89370400440532013000",
+  "message": "bwipp.GS1missingAIs#3967: One of more requisite AIs for AI (8007) are missing: 415"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8007)DE89370400440532013001",
+  "message": "bwipp.GS1badIBANchecksum#3317: AI 8007: IBAN checksum incorrect"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8007)XX89370400440532013000",
+  "message": "bwipp.GS1badIBANchecksum#3317: AI 8007: IBAN checksum incorrect"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8013)1987654Ad4X4bL5ttr2310c2K",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8013)1987654Ad4X4bL5ttr2310c2X",
+  "message": "bwipp.GS1badAlphaCheckCharacters#3275: AI 8013: Bad alphanumeric check characters"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(7023)1234abcd",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8030)ABC=",
+  "message": "bwipp.GS1badCSET64padding#3218: AI 8030: Invalid CSET 64 padding"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8030)AB=",
+  "message": "bwipp.GS1missingAIs#3967: One of more requisite AIs for AI (8030) are missing: 00 OR 01+21 OR 253 OR 255 OR 8003 OR 8004 OR 8006+21 OR 8010+8011 OR 8017 OR 8018"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8030)A+B",
+  "message": "bwipp.GS1badCSET64character#3224: AI 8030: Invalid CSET 64 character"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(4321)2",
+  "message": "bwipp.GS1badBoolean#3404: AI 4321: Neither 0 nor 1 for yes or no"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(7240)abc",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8011)0123",
+  "message": "bwipp.GS1badZeroPrefix#3332: AI 8011: Zero prefix is not permitted"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8026)095212345432130102",
+  "message": "bwipp.GS1missingAIs#3967: One of more requisite AIs for AI (8026) are missing: 37"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8026)095212345432130302",
+  "message": "bwipp.GS1pieceExceedsTotal#3420: AI 8026: Piece number exceeds total"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(4330)000123+",
+  "message": "bwipp.GS1hyphenRequired#3342: AI 4330: A hyphen is required"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(7041)ABC",
+  "message": "bwipp.GS1unknownPackageType#3828: AI 7041: Unknown package type"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(4307)ZZ",
+  "message": "bwipp.GS1UnknownCountryAlpha#3291: AI 4307: Unknown country alpha code"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(4307)DE",
+  "message": "bwipp.GS1missingAIs#3967: One of more requisite AIs for AI (4307) are missing: 00"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8112)00123451234561",
+  "message": "bwipp.GS1couponTooShortSnVLI#3793: AI 8112: Coupon too short: Missing SN VLI"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8112)1012345",
+  "message": "bwipp.GS1couponTooShortFunder#3783: AI 8112: Coupon too short: Truncated Funder ID"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8110)106141411234562891011",
+  "message": "bwipp.GS1couponTooShort1stPurchaseFamilyCode#3524: AI 8110: Coupon too short: 1st Purchase Family Code truncated"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(10)ABC123(21)XYZ",
+  "message": null
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(423)4440299",
+  "message": "bwipp.GS1valueTooShort#3858: AI 423: Too short"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(7007)295964732",
+  "message": "bwipp.GS1valueTooShort#3858: AI 7007: Too short"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(8008)2890095988",
+  "message": "bwipp.GS1badMinute#3379: AI 8008: Invalid minute in the hour"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "x(01)09521234543213",
+  "message": "bwipp.GS1aiMissingOpenParen#2949: AIs must start with '('"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213()",
+  "message": "bwipp.GS1unknownAI#3870: AI : Unrecognised AI"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(10",
+  "message": "bwipp.GS1aiMissingCloseParen#2955: AIs must end with ')'"
+ },
+ {
+  "type": "gs1datamatrix",
+  "value": "(01)09521234543213(10)é",
+  "message": "bwipp.GS1badCSET82character#3204: AI 10: Invalid CSET 82 character"
+ },
+ {
+  "type": "qrcode",
+  "value": "\ud800abc",
+  "message": "URI malformed"
+ },
+ {
+  "type": "qrcode",
+  "value": "abc\udc00",
+  "message": "URI malformed"
+ },
+ {
+  "type": "qrcode",
+  "value": "😀 ok",
+  "message": null
+ },
+ {
+  "type": "code128",
+  "value": "\ud800",
+  "message": "URI malformed"
+ },
+ {
+  "type": "pdf417",
+  "value": "a\udfffb",
+  "message": "URI malformed"
+ },
+ {
+  "type": "nw7",
+  "value": "a123b",
+  "message": "bwipp.rationalizedCodabarBadStartStop#15508: Codabar start and stop characters must be one of A B C or D"
+ },
+ {
+  "type": "nw7",
+  "value": "A123d",
+  "message": "bwipp.rationalizedCodabarBadStartStop#15508: Codabar start and stop characters must be one of A B C or D"
+ },
+ {
+  "type": "nw7",
+  "value": "A123B",
+  "message": null
+ },
+ {
+  "type": "code128",
+  "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "message": null
+ },
+ {
+  "type": "code128",
+  "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "message": "bwipp.code128inputTooLong#9205: The input data is too long"
+ },
+ {
+  "type": "code128",
+  "value": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+  "message": "bwipp.code128inputTooLong#9205: The input data is too long"
+ },
+ {
+  "type": "japanpost",
+  "value": "12345671111111111111",
+  "message": null
+ },
+ {
+  "type": "japanpost",
+  "value": "123456711111111111111",
+  "message": "bwipp.japanpostTooLong#17271: The input is too long"
+ },
+ {
+  "type": "japanpost",
+  "value": "1234567ABCDEFG",
+  "message": "bwipp.japanpostTooLong#17271: The input is too long"
+ },
+ {
+  "type": "pdf417",
+  "value": "漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢",
+  "message": "bwipp.pdf417inputTooLong#22902: The input data is too long"
+ },
+ {
+  "type": "pdf417",
+  "value": "漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢漢",
+  "message": "bwipp.pdf417inputTooLong#22902: The input data is too long"
+ },
+ {
+  "type": "pdf417",
+  "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "message": null
+ },
+ {
+  "type": "upce",
+  "value": "00634045",
+  "message": "bwipp.upcEbadCheckDigit#7845: Incorrect UPC check digit provided"
+ },
+ {
+  "type": "upce",
+  "value": "00634044",
+  "message": null
+ },
+ {
+  "type": "upce",
+  "value": "0481683",
+  "message": null
+ },
+ {
+  "type": "upce",
+  "value": "04816839",
+  "message": null
+ },
+ {
+  "type": "code39",
+  "value": "CODE\t39",
+  "message": "bwipp.code39badCharacter#10257: Code 39 must contain only digits, capital letters, spaces and the symbols -.$/+%"
+ },
+ {
+  "type": "code39",
+  "value": "CODE\n39",
+  "message": "bwipp.code39badCharacter#10257: Code 39 must contain only digits, capital letters, spaces and the symbols -.$/+%"
+ },
+ {
+  "type": "code39",
+  "value": "CODE 39",
+  "message": "bwipp.code39badCharacter#10257: Code 39 must contain only digits, capital letters, spaces and the symbols -.$/+%"
+ },
+ {
+  "type": "code39",
+  "value": "CODE 39",
+  "message": null
+ }
+]
