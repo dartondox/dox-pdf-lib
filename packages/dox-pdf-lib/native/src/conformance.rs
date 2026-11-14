@@ -243,13 +243,8 @@ pub fn add_intent(pdf: &mut Document, icc: &[u8], intent: &Intent, replace: bool
         Some(Object::Array(items)) => items.clone(),
         _ => vec![],
     };
-    if replace {
-        list.retain(|i| match deref(pdf, i) {
-            Some(Object::Dictionary(d)) => !matches!(d.get(b"S"), Ok(Object::Name(n)) if n == intent.subtype),
-            _ => false,
-        });
-    }
-    // share a profile stream with the same bytes
+    // share a profile stream with the same bytes. Look before the old
+    // intents go, so a new setConformance reuses the profile of the last.
     let same = list.iter().find_map(|i| {
         let Some(Object::Dictionary(d)) = deref(pdf, i) else {
             return None;
@@ -258,10 +253,27 @@ pub fn add_intent(pdf: &mut Document, icc: &[u8], intent: &Intent, replace: bool
             return None;
         };
         match pdf.objects.get(r) {
-            Some(Object::Stream(s)) if s.content == packed => Some(*r),
+            Some(Object::Stream(s))
+                if s.content == packed || s.get_plain_content_with_limit(icc.len()).is_ok_and(|c| c == icc) =>
+            {
+                Some(*r)
+            }
             _ => None,
         }
     });
+    let mut dropped: Vec<ObjectId> = Vec::new();
+    if replace {
+        list.retain(|i| {
+            let keep = match deref(pdf, i) {
+                Some(Object::Dictionary(d)) => !matches!(d.get(b"S"), Ok(Object::Name(n)) if n == intent.subtype),
+                _ => false,
+            };
+            if !keep && let Object::Reference(r) = i {
+                dropped.push(*r);
+            }
+            keep
+        });
+    }
     let profile = match same {
         Some(r) => r,
         None => {
@@ -288,7 +300,39 @@ pub fn add_intent(pdf: &mut Document, icc: &[u8], intent: &Intent, replace: bool
     list.push(Object::Reference(pdf.add_object(d)));
     pdf.get_dictionary_mut(cat_id)?
         .set("OutputIntents", Object::Array(list));
+    // the replaced intents and their profiles, when nothing else uses them,
+    // so a file does not grow each time it is loaded and set again
+    let mut profiles: Vec<ObjectId> = Vec::new();
+    for id in &dropped {
+        if let Some(Object::Dictionary(d)) = pdf.objects.get(id)
+            && let Ok(Object::Reference(p)) = d.get(b"DestOutputProfile")
+            && *p != profile
+        {
+            profiles.push(*p);
+        }
+    }
+    for id in dropped.into_iter().chain(profiles) {
+        if !is_referenced(pdf, id) {
+            pdf.objects.remove(&id);
+        }
+    }
     Ok(())
+}
+
+/// True when any object holds a reference to `target`.
+fn is_referenced(pdf: &Document, target: ObjectId) -> bool {
+    let mut stack: Vec<&Object> = pdf.objects.values().collect();
+    stack.extend(pdf.trailer.iter().map(|(_, v)| v));
+    while let Some(o) = stack.pop() {
+        match o {
+            Object::Reference(r) if *r == target => return true,
+            Object::Array(a) => stack.extend(a.iter()),
+            Object::Dictionary(d) => stack.extend(d.iter().map(|(_, v)| v)),
+            Object::Stream(s) => stack.extend(s.dict.iter().map(|(_, v)| v)),
+            _ => {}
+        }
+    }
+    false
 }
 
 /// `setConformance`: the output intent now, the rest at save.
@@ -1001,12 +1045,36 @@ fn check_resources<'a>(
             _ => vec![],
         }
     };
-    for (id, f) in entries(b"Font") {
+    let fonts: Vec<(String, Option<ObjectId>, &Object)> = match dict_get(pdf, res, b"Font") {
+        Some(Object::Dictionary(d)) => d
+            .iter()
+            .map(|(k, v)| {
+                let id = match v {
+                    Object::Reference(r) => Some(*r),
+                    _ => None,
+                };
+                (
+                    String::from_utf8_lossy(k).into_owned(),
+                    id,
+                    deref(pdf, v).unwrap_or(&Object::Null),
+                )
+            })
+            .collect(),
+        _ => vec![],
+    };
+    for (key, id, f) in fonts {
         if id.is_some_and(|id| !ck.done.insert(id)) {
             continue;
         }
         if let Object::Dictionary(f) = f {
             check_font(ck, page, f);
+        } else {
+            // a reader can not draw text in it, and it is not embedded
+            ck.add(
+                Kind::FontNotEmbedded,
+                page,
+                format!("the font resource {key} is missing or broken (not a font dictionary)"),
+            );
         }
     }
     for (_, gs) in entries(b"ExtGState") {
@@ -1980,6 +2048,46 @@ mod tests {
         assert_eq!(
             list[0].get(b"DestOutputProfile").unwrap(),
             list[1].get(b"DestOutputProfile").unwrap()
+        );
+    }
+
+    #[test]
+    fn replaced_intents_leave_no_objects() {
+        let mut d = create(true, b"");
+        let icc = header(b"RGB ", b"mntr");
+        set(&mut d, A2b, &icc, &intent()).unwrap();
+        let count = d.pdf.objects.len();
+        for _ in 0..3 {
+            set(&mut d, A2b, &icc, &intent()).unwrap();
+        }
+        assert_eq!(d.pdf.objects.len(), count);
+        // another profile: the old one goes
+        let mut other = header(b"RGB ", b"mntr");
+        other[8] = 4;
+        set(&mut d, A2b, &other, &intent()).unwrap();
+        assert_eq!(d.pdf.objects.len(), count);
+    }
+
+    #[test]
+    fn a_broken_font_is_an_issue() {
+        let mut d = create(true, b"");
+        set(&mut d, A2b, &header(b"RGB ", b"mntr"), &intent()).unwrap();
+        let page = crate::document::new_page(&mut d.pdf, 100.0, 100.0);
+        crate::document::insert_page(&mut d.pdf, 0, page).unwrap();
+        let mut fonts = Dictionary::new();
+        fonts.set("F1", Object::Reference((9999, 0)));
+        let mut res = Dictionary::new();
+        res.set("Font", Object::Dictionary(fonts));
+        d.pdf
+            .get_dictionary_mut(page)
+            .unwrap()
+            .set("Resources", Object::Dictionary(res));
+        let issues = check(&d, A2b).unwrap();
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.kind == Kind::FontNotEmbedded && i.message.contains("F1")),
+            "{issues:?}"
         );
     }
 

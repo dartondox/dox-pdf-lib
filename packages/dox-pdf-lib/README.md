@@ -384,6 +384,13 @@ Future<void> main() async {
 
 #### What setConformance does for you
 
+Call `setConformance` again after `PDFDocument.load`, before you save,
+also for a file that is already PDF/A or PDF/X. A plain save does not know
+the standard: it changes the version, the object streams, the
+modification date and the producer, so the file is not PDF/A or PDF/X
+any more.
+
+
 - Adds the output intent with your ICC profile. It checks the profile
   header and throws a `PDFLibError` with a clear message when the profile
   is broken or does not fit (eg. an RGB profile for PDF/X-1a).

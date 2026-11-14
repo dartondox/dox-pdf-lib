@@ -338,6 +338,31 @@ void main() {
       expect(b[2], isNot(a[2]));
     });
 
+    test('load, set and save again: the file does not grow', () async {
+      if (!online) {
+        return _skipOrFail('the ICC profiles could not be loaded');
+      }
+      Uint8List pdf = await (await _goodDoc(PDFStandard.pdfX4))
+          .save(useObjectStreams: false);
+      List<int> sizes = <int>[];
+      for (int i = 0; i < 4; i++) {
+        PDFDocument doc = await PDFDocument.load(pdf);
+        doc.setConformance(
+          PDFStandard.pdfX4,
+          iccProfile: testProfile('cmyk.icc'),
+          outputConditionIdentifier: 'Custom CMYK',
+        );
+        pdf = await doc.save(useObjectStreams: false);
+        sizes.add(pdf.length);
+        expect(
+          RegExp('/Type/OutputIntent').allMatches(_text(pdf)),
+          hasLength(1),
+        );
+      }
+      // the first load renumbers some objects; then the size stays
+      expect(sizes.skip(1).toSet(), hasLength(1), reason: '$sizes');
+    });
+
     test('default save is unchanged: no /ID, no XMP, version 1.7', () async {
       PDFDocument doc = await PDFDocument.create();
       doc.addPage();
