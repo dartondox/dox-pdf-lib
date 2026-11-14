@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.2
 
 - Fix: `embedPng` with a broken palette (its length is not a multiple of 3) now throws an "Invalid PNG" error. Before, the png crate panicked inside (the panic was caught, but the message was an internal error). Found by the image fuzz target.
 - New: `dictionaryWordBreaks(text)` gives the word breaks inside Thai, Lao, Khmer and Myanmar text, the same as `Intl.Segmenter` of Node.js and browsers (ICU word lists and break rules). It is an extra, not part of pdf-lib. The native library is about 1 MB bigger.
