@@ -98,6 +98,8 @@ Text fields, check boxes, radio groups, dropdowns, option lists, buttons and sig
 - A field with no `/DA` takes it from its parent field or the AcroForm, as the PDF spec says. pdf-lib reads only the field's own `/DA`.
 - `removeField` and `flatten` also take the widgets out of the `/Annots` of their pages. pdf-lib leaves references to deleted objects there.
 - A broken widget (no page, no appearance) is skipped by `flatten`. pdf-lib throws.
+- Dropdown and option list options with an export value and a display text (`/Opt [[(CA) (Canada)]]`): `select` takes the display text or the export value, writes the export value to `/V`, and `getSelected` returns the display text. pdf-lib writes the display text to `/V` and returns `/V` as it is.
+- A combed text field with more than 1000 cells (`/MaxLen`) is drawn as one normal line.
 - `getForm()` removes XFA data like pdf-lib, but prints no warning.
 - Appearances use the standard fonts for now. Custom font files come later.
 

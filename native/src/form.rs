@@ -479,173 +479,102 @@ fn set_da(pdf: &mut Document, id: ObjectId, da: Vec<u8>) -> Result<()> {
 
 // ------------------------------------------------------------ /DA parsing
 
-/// A tiny backtracking matcher for the 3 regexes pdf-lib uses on `/DA`,
-/// so the same match (leftmost, greedy) is found.
-#[derive(Clone, Copy)]
-enum Cls {
-    Ws,
-    NotWs,
-    Digit,
+/// The tokens of a `/DA` text: runs of non-whitespace, as byte ranges.
+/// One pass, so a long or hostile `/DA` costs linear time. The rules below
+/// give the same result as pdf-lib's three `/DA` regexes on real files.
+fn da_tokens(da: &[u8]) -> Vec<(usize, usize)> {
+    let ws = |b: u8| matches!(b, 0 | b'\t' | b'\n' | 0x0c | b'\r' | b' ');
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < da.len() {
+        if ws(da[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < da.len() && !ws(da[i]) {
+            i += 1;
+        }
+        out.push((start, i));
+    }
+    out
 }
 
-impl Cls {
-    fn has(self, b: u8) -> bool {
-        let ws = matches!(b, 0 | b'\t' | b'\n' | 0x0c | b'\r' | b' ');
-        match self {
-            Cls::Ws => ws,
-            Cls::NotWs => !ws,
-            Cls::Digit => b.is_ascii_digit(),
-        }
+/// `\d*\.\d+|\d+` over the whole token.
+fn is_num(t: &[u8]) -> bool {
+    let digits = |s: &[u8]| s.iter().all(u8::is_ascii_digit);
+    match t.iter().position(|&b| b == b'.') {
+        Some(dot) => digits(&t[..dot]) && t.len() > dot + 1 && digits(&t[dot + 1..]),
+        None => !t.is_empty() && digits(t),
     }
 }
 
-enum Node {
-    Lit(&'static [u8]),
-    /// a class, at least `min` times, greedy
-    Rep(Cls, usize),
-    Alt(&'static [&'static [Node]]),
-    Cap(usize, &'static [Node]),
-    Opt(&'static [Node]),
+/// `/name` in a token: the offset of the `/` (a name has 1 char or more).
+fn name_at(t: &[u8]) -> Option<usize> {
+    t.iter().position(|&b| b == b'/').filter(|&p| p + 1 < t.len())
 }
 
-type Caps = [Option<(usize, usize)>; 6];
-type Cont<'a> = &'a mut dyn FnMut(usize, &mut Caps) -> bool;
-
-fn run(nodes: &[Node], s: &[u8], pos: usize, caps: &mut Caps, k: Cont) -> bool {
-    let Some((first, rest)) = nodes.split_first() else {
-        return k(pos, caps);
-    };
-    match first {
-        Node::Lit(l) => s[pos..].starts_with(l) && run(rest, s, pos + l.len(), caps, k),
-        Node::Rep(c, min) => {
-            let mut end = pos;
-            while end < s.len() && c.has(s[end]) {
-                end += 1;
-            }
-            if end < pos + min {
-                return false;
-            }
-            (pos + min..=end).rev().any(|e| run(rest, s, e, caps, k))
+/// The last `Tf`: (start of `/name`, end of `Tf`, name, size). Like the
+/// regex `/(name)\s*(num)?\s+Tf`; with `need_size`, the size must be there.
+fn last_tf(da: &[u8], need_size: bool) -> Option<(usize, usize, Vec<u8>, Option<f64>)> {
+    let toks = da_tokens(da);
+    let tok = |i: usize| &da[toks[i].0..toks[i].1];
+    (1..toks.len()).rev().find_map(|i| {
+        if !tok(i).starts_with(b"Tf") {
+            return None;
         }
-        Node::Alt(alts) => alts
-            .iter()
-            .any(|a| run(a, s, pos, caps, &mut |p, c| run(rest, s, p, c, k))),
-        Node::Cap(i, inner) => {
-            let i = *i;
-            run(inner, s, pos, caps, &mut |p, c| {
-                let old = c[i];
-                c[i] = Some((pos, p));
-                run(rest, s, p, c, k) || {
-                    c[i] = old;
-                    false
-                }
-            })
+        let end = toks[i].0 + 2;
+        if i >= 2
+            && is_num(tok(i - 1))
+            && let Some(n) = name_at(tok(i - 2))
+        {
+            let name = tok(i - 2)[n + 1..].to_vec();
+            let size = std::str::from_utf8(tok(i - 1)).ok()?.parse().ok();
+            return Some((toks[i - 2].0 + n, end, name, size));
         }
-        Node::Opt(inner) => {
-            if run(inner, s, pos, caps, &mut |p, c| run(rest, s, p, c, k)) {
-                return true;
-            }
-            run(rest, s, pos, caps, k)
+        if need_size {
+            return None;
         }
-    }
-}
-
-/// `\d*\.\d+|\d+`
-const NUM: &[Node] = &[Node::Alt(&[
-    &[Node::Rep(Cls::Digit, 0), Node::Lit(b"."), Node::Rep(Cls::Digit, 1)],
-    &[Node::Rep(Cls::Digit, 1)],
-])];
-
-/// appearances.ts: `/(name)\s+(num)\s+Tf`
-const TF_SIZE: &[Node] = &[
-    Node::Lit(b"/"),
-    Node::Cap(1, &[Node::Rep(Cls::NotWs, 1)]),
-    Node::Rep(Cls::Ws, 1),
-    Node::Cap(2, NUM),
-    Node::Rep(Cls::Ws, 1),
-    Node::Lit(b"Tf"),
-];
-
-/// PDFAcroField.ts: `/(name)\s*(num)?\s+Tf`
-const TF_ANY: &[Node] = &[
-    Node::Lit(b"/"),
-    Node::Cap(1, &[Node::Rep(Cls::NotWs, 1)]),
-    Node::Rep(Cls::Ws, 0),
-    Node::Opt(&[Node::Cap(2, NUM)]),
-    Node::Rep(Cls::Ws, 1),
-    Node::Lit(b"Tf"),
-];
-
-/// appearances.ts: `(num)\s*(num)?\s*(num)?\s*(num)?\s+(g|rg|k)`
-const COLOR: &[Node] = &[
-    Node::Cap(1, NUM),
-    Node::Rep(Cls::Ws, 0),
-    Node::Opt(&[Node::Cap(2, NUM)]),
-    Node::Rep(Cls::Ws, 0),
-    Node::Opt(&[Node::Cap(3, NUM)]),
-    Node::Rep(Cls::Ws, 0),
-    Node::Opt(&[Node::Cap(4, NUM)]),
-    Node::Rep(Cls::Ws, 1),
-    Node::Cap(
-        5,
-        &[Node::Alt(&[
-            &[Node::Lit(b"g")],
-            &[Node::Lit(b"rg")],
-            &[Node::Lit(b"k")],
-        ])],
-    ),
-];
-
-/// The leftmost match in `s`: `(end, caps)`, captures as absolute ranges.
-fn find(pat: &[Node], s: &[u8]) -> Option<(usize, Caps)> {
-    for start in 0..=s.len() {
-        let mut found = None;
-        let mut caps: Caps = [None; 6];
-        if run(pat, s, start, &mut caps, &mut |end, c| {
-            found = Some((end, *c));
-            true
-        }) {
-            return found;
-        }
-    }
-    None
-}
-
-/// pdf-lib's `findLastMatch`: the last match and the end of it.
-fn find_last(pat: &[Node], s: &[u8]) -> Option<(usize, usize, Caps)> {
-    let mut pos = 0;
-    let mut last = None;
-    while pos < s.len() {
-        let Some((end, caps)) = find(pat, &s[pos..]) else { break };
-        let shift = |c: Option<(usize, usize)>| c.map(|(a, b)| (a + pos, b + pos));
-        let caps = caps.map(shift);
-        let start = caps[0].map(|c| c.0).unwrap_or(pos);
-        last = Some((start, end + pos, caps));
-        pos += end.max(1);
-    }
-    last
-}
-
-fn cap_text(s: &[u8], c: Option<(usize, usize)>) -> Option<&str> {
-    c.and_then(|(a, b)| std::str::from_utf8(&s[a..b]).ok())
+        let n = name_at(tok(i - 1))?;
+        Some((toks[i - 1].0 + n, end, tok(i - 1)[n + 1..].to_vec(), None))
+    })
 }
 
 /// appearances.ts `getDefaultFontSize`.
 fn da_font_size(da: Option<&[u8]>) -> Option<f64> {
-    let da = da?;
-    let (_, _, caps) = find_last(TF_SIZE, da)?;
-    cap_text(da, caps[2])?.parse().ok().filter(|v: &f64| v.is_finite())
+    last_tf(da?, true)?.3.filter(|v| v.is_finite())
 }
 
-/// appearances.ts `getDefaultColor`.
+/// appearances.ts `getDefaultColor`: the last `g`, `rg` or `k` with numbers
+/// before it (up to 4 are taken, like the regex).
 fn da_color(da: Option<&[u8]>) -> Option<Color> {
     let da = da?;
-    let (_, _, caps) = find_last(COLOR, da)?;
-    let c = |i: usize| cap_text(da, caps[i]).and_then(|t| t.parse::<f64>().ok());
-    match cap_text(da, caps[5])? {
-        "g" => Some(Color::Gray(c(1)?)),
-        "rg" => Some(Color::Rgb(c(1)?, c(2)?, c(3)?)),
-        "k" => Some(Color::Cmyk(c(1)?, c(2)?, c(3)?, c(4)?)),
+    let toks = da_tokens(da);
+    let tok = |i: usize| &da[toks[i].0..toks[i].1];
+    let (i, op) = (1..toks.len()).rev().find_map(|i| {
+        let t = tok(i);
+        let op = if t.starts_with(b"rg") {
+            "rg"
+        } else if t.starts_with(b"g") {
+            "g"
+        } else if t.starts_with(b"k") {
+            "k"
+        } else {
+            return None;
+        };
+        is_num(tok(i - 1)).then_some((i, op))
+    })?;
+    let mut first = i;
+    while first > 0 && i - first < 4 && is_num(tok(first - 1)) {
+        first -= 1;
+    }
+    let c: Vec<f64> = (first..i)
+        .filter_map(|j| std::str::from_utf8(tok(j)).ok()?.parse().ok())
+        .collect();
+    match (op, c.len()) {
+        ("g", _) => Some(Color::Gray(c[0])),
+        ("rg", 3..) => Some(Color::Rgb(c[0], c[1], c[2])),
+        ("k", 4) => Some(Color::Cmyk(c[0], c[1], c[2], c[3])),
         _ => None,
     }
 }
@@ -659,14 +588,13 @@ fn set_font_size(pdf: &mut Document, id: ObjectId, size: f64) -> Result<()> {
             format!("No /DA (default appearance) entry found for field: {field}"),
         )
     })?;
-    // the regex needs a match start: find it with the whole pattern
-    let last = find_last_tf(&da).ok_or_else(|| {
+    let last = last_tf(&da, false).ok_or_else(|| {
         form_error(
             "MissingTfOperatorError",
             format!("No Tf operator found for DA of field: {field}"),
         )
     })?;
-    let (start, end, font) = last;
+    let (start, end, font, _) = last;
     let mut out = da[..start].to_vec();
     out.extend_from_slice(b" /");
     out.extend_from_slice(&font);
@@ -675,30 +603,6 @@ fn set_font_size(pdf: &mut Document, id: ObjectId, size: f64) -> Result<()> {
     out.extend_from_slice(b" Tf ");
     out.extend_from_slice(&da[end..]);
     set_da(pdf, id, out)
-}
-
-/// The last `TF_ANY` match: start, end and the font name.
-fn find_last_tf(da: &[u8]) -> Option<(usize, usize, Vec<u8>)> {
-    let mut pos = 0;
-    let mut last = None;
-    while pos < da.len() {
-        let rest = &da[pos..];
-        let mut hit = None;
-        for start in 0..=rest.len() {
-            let mut caps: Caps = [None; 6];
-            if run(TF_ANY, rest, start, &mut caps, &mut |end, c| {
-                hit = Some((start, end, c[1]));
-                true
-            }) {
-                break;
-            }
-        }
-        let Some((start, end, name)) = hit else { break };
-        let (a, b) = name?;
-        last = Some((start + pos, end + pos, rest[a..b].to_vec()));
-        pos += end;
-    }
-    last
 }
 
 // ------------------------------------------------------------ errors
@@ -932,6 +836,8 @@ fn marked_text(o: &mut Ops, lines: &[Line], color: Color, font: &str, size: f64)
 // ------------------------------------------------------------ text layout
 
 const MIN_FONT_SIZE: f64 = 4.0;
+/// Most cells of a combed text field. Each cell is one text operator.
+const MAX_COMB_CELLS: usize = 1000;
 const MAX_FONT_SIZE: f64 = 500.0;
 
 #[derive(Clone, Copy)]
@@ -1139,7 +1045,7 @@ fn layout_combed(text: &str, size: Option<f64>, f: &dyn FormFont, b: Bounds, cel
     let height = f.height(size, false);
     let y = b.y + (b.h / 2.0 - height / 2.0);
     let all: String = line.iter().collect();
-    let mut out = Vec::with_capacity(cells);
+    let mut out = Vec::with_capacity(cells.min(MAX_COMB_CELLS));
     for cell in 0..cells {
         let c: String = line.get(cell).map(|c| c.to_string()).unwrap_or_default();
         let width = f.width(&c, size)?;
@@ -1445,7 +1351,7 @@ fn font_appearance(doc: &mut Doc, field: ObjectId, kind: i32, widget: ObjectId, 
         }
         OPTION_LIST => {
             let mut options: Vec<String> = choice_options(pdf, &field_dict).into_iter().map(|o| o.2).collect();
-            let selected = choice_values(pdf, field);
+            let selected = shown_values(pdf, field);
             if fl & SORT != 0 {
                 // JavaScript's default sort: by UTF-16 code units
                 options.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
@@ -1479,7 +1385,7 @@ fn font_appearance(doc: &mut Doc, field: ObjectId, kind: i32, widget: ObjectId, 
         _ => {
             // text field and dropdown
             let (lines, size, padding) = if kind == DROPDOWN {
-                let text = choice_values(pdf, field).into_iter().next().unwrap_or_default();
+                let text = shown_values(pdf, field).into_iter().next().unwrap_or_default();
                 let b = Bounds {
                     x: bw + 1.0,
                     y: bw + 1.0,
@@ -1491,7 +1397,11 @@ fn font_appearance(doc: &mut Doc, field: ObjectId, kind: i32, widget: ObjectId, 
             } else {
                 let text = text_value(pdf, field).unwrap_or_default();
                 let max_len = get_num(pdf, &field_dict, b"MaxLen");
-                let combed = fl & COMB != 0 && fl & (MULTILINE | PASSWORD | FILE_SELECT) == 0 && max_len.is_some();
+                // a file can say `/MaxLen 4000000000000`: more cells than
+                // MAX_COMB_CELLS are laid out as one normal line
+                let combed = fl & COMB != 0
+                    && fl & (MULTILINE | PASSWORD | FILE_SELECT) == 0
+                    && max_len.is_some_and(|m| m <= MAX_COMB_CELLS as f64);
                 let padding = if combed { 0.0 } else { 1.0 };
                 let b = Bounds {
                     x: bw + padding,
@@ -1649,19 +1559,56 @@ fn choice_options(pdf: &Document, d: &Dictionary) -> Vec<(Object, Object, String
 }
 
 fn choice_values(pdf: &Document, field: ObjectId) -> Vec<String> {
+    choice_value_objects(pdf, field).iter().filter_map(text_of).collect()
+}
+
+/// The string objects of `/V`, as they are in the file.
+fn choice_value_objects(pdf: &Document, field: ObjectId) -> Vec<Object> {
     match inherited(pdf, field, b"V") {
-        Some(o @ Object::String(..)) => text_of(o).into_iter().collect(),
-        Some(Object::Array(items)) => items.iter().filter_map(|o| deref(pdf, o).and_then(text_of)).collect(),
+        Some(o @ Object::String(..)) => vec![o.clone()],
+        Some(Object::Array(items)) => items
+            .iter()
+            .filter_map(|o| deref(pdf, o))
+            .filter(|o| matches!(o, Object::String(..)))
+            .cloned()
+            .collect(),
         _ => Vec::new(),
     }
 }
 
-/// `PDFAcroChoice.setValues`.
-fn set_choice_values(pdf: &mut Document, field: ObjectId, values: &[String]) -> Result<()> {
-    let fl = flags(pdf, field);
+/// The options of a field: (export value object, export text, display text).
+fn choice_pairs(pdf: &Document, field: ObjectId) -> Vec<(Object, String, String)> {
     let d = dict_of(pdf, field).cloned().unwrap_or_default();
-    let options: Vec<String> = choice_options(pdf, &d).into_iter().map(|o| o.2).collect();
-    if fl & COMBO != 0 && fl & EDIT == 0 && !values.iter().all(|v| options.contains(v)) {
+    choice_options(pdf, &d)
+        .into_iter()
+        .map(|(value, _, shown)| {
+            let export = text_of(&value).unwrap_or_default();
+            (value, export, shown)
+        })
+        .collect()
+}
+
+/// The selected values as display text: `/V` holds the export value of an
+/// option with an export / display pair. pdf-lib returns `/V` as it is.
+fn shown_values(pdf: &Document, field: ObjectId) -> Vec<String> {
+    let pairs = choice_pairs(pdf, field);
+    choice_values(pdf, field)
+        .into_iter()
+        .map(|v| match pairs.iter().find(|p| p.1 == v) {
+            Some(p) => p.2.clone(),
+            None => v,
+        })
+        .collect()
+}
+
+/// `PDFAcroChoice.setValues`. A value may be a display text or an export
+/// value of an option.
+fn set_choice_values(pdf: &mut Document, field: ObjectId, values: Vec<Object>) -> Result<()> {
+    let fl = flags(pdf, field);
+    let pairs = choice_pairs(pdf, field);
+    let texts: Vec<String> = values.iter().filter_map(text_of).collect();
+    let index = |v: &String| pairs.iter().position(|p| p.1 == *v || p.2 == *v);
+    if fl & COMBO != 0 && fl & EDIT == 0 && !texts.iter().all(|v| index(v).is_some()) {
         return Err(form_error(
             "InvalidAcroFieldValueError",
             "Attempted to set invalid field value",
@@ -1673,19 +1620,17 @@ fn set_choice_values(pdf: &mut Document, field: ObjectId, values: &[String]) -> 
             "Attempted to select multiple values for single-select field",
         ));
     }
+    let mut idx: Vec<i64> = texts.iter().map(|v| index(v).map(|i| i as i64).unwrap_or(-1)).collect();
     let dict = dict_mut(pdf, field)?;
-    match values {
-        [] => {
+    let many = values.len() > 1;
+    match values.len() {
+        0 => {
             dict.remove(b"V");
         }
-        [one] => dict.set("V", text_object(one)),
-        many => dict.set("V", Object::Array(many.iter().map(|v| text_object(v)).collect())),
+        1 => dict.set("V", values.into_iter().next().unwrap()),
+        _ => dict.set("V", Object::Array(values)),
     }
-    if values.len() > 1 {
-        let mut idx: Vec<i64> = values
-            .iter()
-            .map(|v| options.iter().position(|o| o == v).map(|i| i as i64).unwrap_or(-1))
-            .collect();
+    if many {
         // JavaScript's default sort compares the numbers as text
         idx.sort_by_key(|i| i.to_string());
         dict.set("I", Object::Array(idx.into_iter().map(Object::Integer).collect()));
@@ -2516,7 +2461,7 @@ fn form_call(doc: &mut Doc, op: i32, field: ObjectId, n: &[f64], s: &[String], o
             let list: Vec<String> = choice_options(&doc.pdf, &d).into_iter().map(|o| o.2).collect();
             o.strs(&list);
         }
-        CHOICE_SELECTED => o.strs(&choice_values(&doc.pdf, field)),
+        CHOICE_SELECTED => o.strs(&shown_values(&doc.pdf, field)),
         CHOICE_SET_OPTIONS | CHOICE_ADD_OPTIONS => {
             let pdf = &mut doc.pdf;
             let mut list: Vec<Object> = Vec::new();
@@ -2538,34 +2483,45 @@ fn form_call(doc: &mut Doc, op: i32, field: ObjectId, n: &[f64], s: &[String], o
             let merge = num_at(0)? != 0.0;
             let pdf = &mut doc.pdf;
             let kind = field_kind(pdf, field)?;
-            let d = dict_of(pdf, field).cloned().unwrap_or_default();
-            let valid: Vec<String> = choice_options(pdf, &d).into_iter().map(|o| o.2).collect();
+            let pairs = choice_pairs(pdf, field);
+            // a display text or an export value; display text first
+            let pick = |v: &String| {
+                pairs
+                    .iter()
+                    .find(|p| p.2 == *v)
+                    .or_else(|| pairs.iter().find(|p| p.1 == *v))
+                    .map(|p| p.0.clone())
+            };
             if kind == OPTION_LIST
-                && let Some(bad) = s.iter().find(|v| !valid.contains(v))
+                && let Some(bad) = s.iter().find(|v| pick(v).is_none())
             {
                 return Err(Error::generic(format!(
                     "`option` must be one of {}, but was actually \"{bad}\"",
-                    valid
+                    pairs
                         .iter()
-                        .map(|v| format!("\"{v}\""))
+                        .map(|p| format!("\"{}\"", p.2))
                         .collect::<Vec<_>>()
                         .join(" or ")
                 )));
             }
-            if kind == DROPDOWN && s.iter().any(|v| !valid.contains(v)) {
+            if kind == DROPDOWN && s.iter().any(|v| pick(v).is_none()) {
                 set_flag(pdf, field, EDIT, true)?;
             }
             doc.form.dirty.insert(field);
             if s.len() > 1 || (s.len() == 1 && merge) {
                 set_flag(pdf, field, MULTI_SELECT, true)?;
             }
-            let mut values = if merge { choice_values(pdf, field) } else { Vec::new() };
-            values.extend(s.iter().cloned());
-            set_choice_values(pdf, field, &values)?;
+            let mut values = if merge {
+                choice_value_objects(pdf, field)
+            } else {
+                Vec::new()
+            };
+            values.extend(s.iter().map(|v| pick(v).unwrap_or_else(|| text_object(v))));
+            set_choice_values(pdf, field, values)?;
         }
         CHOICE_CLEAR => {
             doc.form.dirty.insert(field);
-            set_choice_values(&mut doc.pdf, field, &[])?;
+            set_choice_values(&mut doc.pdf, field, Vec::new())?;
         }
         ADD_TO_PAGE => {
             let kind = field_kind(&doc.pdf, field)?;
@@ -2668,9 +2624,16 @@ mod tests {
             Some(Color::Cmyk(1.0, 0.0, 0.0, 0.0))
         );
         assert_eq!(da_color(Some(b"/Helv 12 Tf")), None);
-        let (s, e, name) = find_last_tf(b"0 g /Helv 0 Tf x").unwrap();
+        let (s, e, name, _) = last_tf(b"0 g /Helv 0 Tf x", false).unwrap();
         assert_eq!((s, e, name.as_slice()), (4, 14, &b"Helv"[..]));
-        assert!(find_last_tf(b"/Helv Tf").is_some());
+        assert!(last_tf(b"/Helv Tf", false).is_some());
+        // a long hostile /DA is linear time
+        let long = [b"1 ".repeat(50_000), b"rg /F 9 Tf".to_vec()].concat();
+        let t = std::time::Instant::now();
+        assert_eq!(da_font_size(Some(&long)), Some(9.0));
+        assert!(da_color(Some(&long)).is_some());
+        assert!(da_color(Some(&b"9".repeat(100_000))).is_none());
+        assert!(t.elapsed().as_millis() < 500);
     }
 
     #[test]
@@ -2804,6 +2767,41 @@ mod tests {
         let da = own_da(&d.pdf, parent_id).unwrap();
         assert_eq!(da, b"0 0 1 rg\n/Helvetica 9 Tf");
         assert!(matches!(normal(&d.pdf, w2), Some(Object::Stream(_))));
+    }
+
+    #[test]
+    fn huge_comb_max_len_is_one_line() {
+        let (mut d, page) = doc_with_page();
+        let id = create_field(&mut d, TEXT_FIELD, "t").unwrap();
+        add_to_page(&mut d, id, TEXT_FIELD, &page_opts(page), "").unwrap();
+        set_flag(&mut d.pdf, id, COMB, true).unwrap();
+        dict_mut(&mut d.pdf, id)
+            .unwrap()
+            .set("MaxLen", Object::Integer(4_000_000_000_000));
+        dict_mut(&mut d.pdf, id).unwrap().set("V", text_object("abc"));
+        d.form.dirty.insert(id);
+        update_all(&mut d, None).unwrap();
+        assert!(!needs_update(&d, id, TEXT_FIELD));
+    }
+
+    #[test]
+    fn choice_export_and_display_values() {
+        let (mut d, page) = doc_with_page();
+        let id = create_field(&mut d, DROPDOWN, "c").unwrap();
+        let pair = |v: &str, s: &str| Object::Array(vec![text_object(v), text_object(s)]);
+        dict_mut(&mut d.pdf, id)
+            .unwrap()
+            .set("Opt", Object::Array(vec![pair("CA", "Canada"), pair("MM", "Myanmar")]));
+        add_to_page(&mut d, id, DROPDOWN, &page_opts(page), "").unwrap();
+        let mut out = [0i64; 2];
+        form_call(&mut d, CHOICE_SELECT, id, &[0.0], &["Canada".into()], &mut out).unwrap();
+        assert_eq!(choice_values(&d.pdf, id), vec!["CA"]);
+        assert_eq!(shown_values(&d.pdf, id), vec!["Canada"]);
+        // the export value works too, and does not turn on Edit
+        form_call(&mut d, CHOICE_SELECT, id, &[0.0], &["MM".into()], &mut out).unwrap();
+        assert_eq!(choice_values(&d.pdf, id), vec!["MM"]);
+        assert!(!has_flag(&d.pdf, id, EDIT));
+        update_all(&mut d, None).unwrap();
     }
 
     #[test]

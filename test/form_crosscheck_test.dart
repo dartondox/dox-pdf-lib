@@ -10,6 +10,8 @@ import 'dart:typed_data';
 import 'package:dox_pdf_lib/dox_pdf_lib.dart';
 import 'package:test/test.dart';
 
+import 'support.dart';
+
 const String _dir = 'tool/crosscheck';
 
 bool get _hasNode => Directory('$_dir/node_modules/pdf-lib').existsSync();
@@ -307,4 +309,32 @@ void main() {
     File(ours).writeAsBytesSync(await doc.save());
     await _sameRender(ours, theirs);
   }, skip: _hasNode && _hasPdftoppm ? false : skipRender);
+
+  test('export / display options: /V gets the export value', () async {
+    Uint8List pdf = buildPdf(<String>[
+      '<< /Type /Catalog /Pages 2 0 R /AcroForm 4 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 300] /Annots [5 0 R] >>',
+      '<< /Fields [5 0 R] >>',
+      '<< /Type /Annot /Subtype /Widget /T (country) /FT /Ch /Ff 131072 '
+          '/Opt [[(CA) (Canada)] [(MM) (Myanmar)]] /Rect [10 10 200 40] '
+          '/P 3 0 R /DA (/Helv 0 Tf 0 g) >>',
+    ]);
+    PDFDocument doc = await PDFDocument.load(pdf);
+    PDFDropdown d = doc.getForm().getDropdown('country');
+    d.select('Canada');
+    expect(d.getSelected(), <String>['Canada']);
+    d.select('MM'); // an export value works too
+    expect(d.getSelected(), <String>['Myanmar']);
+    expect(d.isEditable(), isFalse);
+    d.select('Canada');
+    String out = '${tmp.path}/export.pdf';
+    File(out).writeAsBytesSync(await doc.save());
+    List<Object?> read = await _readWithPdfLib(<String>[out]);
+    Map<String, Object?> field =
+        (read[0]! as List<Object?>).first! as Map<String, Object?>;
+    // pdf-lib returns /V as it is: the export value
+    expect(field['value'], <Object?>['CA']);
+    expect(field['options'], <Object?>['Canada', 'Myanmar']);
+  }, skip: _hasNode ? false : skipNode);
 }
