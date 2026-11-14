@@ -2,7 +2,6 @@ name: dox_pdf_lib
 description: Create and edit PDF documents in Dart, with the API of the pdf-lib JavaScript library. A Rust core does the work through dart:ffi, so it is fast.
 version: 0.0.1
 repository: https://github.com/dartondox/dox-pdf-lib
-homepage: https://dartondox.dev
 
 environment:
   sdk: ^3.13.0

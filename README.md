@@ -19,7 +19,7 @@ The work is done by a small native core written in Rust, so it is fast.
 - Place pages of another PDF on a page (for templates).
 - Set the title, author and other metadata.
 
-It is a plain Dart package with no framework.
+It works in any Dart program.
 
 ## Install
 
@@ -62,7 +62,7 @@ File('out.pdf').writeAsBytesSync(await doc.save());
 - `save()` returns the bytes of the file. `saveAsBase64()` returns a base64 string, or a data URI with `dataUri: true`.
 - `load` throws `EncryptedPDFError` for an encrypted file. Use `ignoreEncryption: true` to load it anyway (see [Differences](#differences-from-pdf-lib)).
 - Big files load and save on a native thread, so your app is not blocked.
-- A document is freed when Dart collects it. Call `doc.dispose()` to free it at once.
+- A document is freed when Dart's garbage collector removes it. Call `doc.dispose()` to free it right away.
 
 ### Pages
 
@@ -161,6 +161,8 @@ JPEG files go into the PDF as they are, without new compression.
 ### Custom fonts and languages
 
 ```dart
+import 'dart:typed_data';
+
 Uint8List bytes = File('NotoSansThai-Regular.ttf').readAsBytesSync();
 PDFFont thai = await doc.embedFont(bytes, subset: true);
 page.drawText('สวัสดีครับ', x: 50, y: 700, font: thai, size: 20);
@@ -168,12 +170,12 @@ page.drawText('สวัสดีครับ', x: 50, y: 700, font: thai, size:
 
 - `embedFont` takes TrueType (`.ttf`) and OpenType (`.otf`) files. There is no `registerFontkit`: the font code is built in.
 - `subset: true` puts only the letters you use into the file. Use it for big fonts, like Chinese, Japanese and Korean fonts. A full 16 MB font makes a 14 MB PDF.
-- Use `subset: false` for fonts in form fields that people will edit in a PDF viewer. A subset has only the letters known at save time, so the viewer can not show new letters people type.
+- Use `subset: false` for fonts in form fields that people will edit in a PDF viewer. A subset has only the letters known at save time, so the viewer cannot show new letters people type.
 - `features` turns OpenType features on or off, for example `features: {'liga': false}`.
 - A font file is read once and shared by all documents that use the same bytes.
 
-Text widths and heights are the same as in pdf-lib with fontkit, so text is measured and wrapped the same way.
-Complex scripts are laid out like HarfBuzz, the standard text engine. Copy and paste from the PDF gives back the text.
+For Latin, Chinese, Japanese, Korean and other simple scripts, text widths and heights are the same as in pdf-lib with fontkit. So text is measured and wrapped the same way.
+Complex scripts, like Thai, Arabic and Hindi, are laid out like HarfBuzz, the standard text engine. Copy and paste from the PDF gives back the text.
 Right-to-left text with numbers or English words follows the Unicode rules, like a web browser.
 
 These languages are tested, with full and subset fonts:
@@ -243,7 +245,7 @@ page.drawText('Filled in on top', x: 50, y: 50);
 ```
 
 - `embedPdf` takes bytes, a base64 string or a loaded `PDFDocument`. `embedPage` and `embedPages` take pages.
-- `drawPage` takes `x`, `y`, `xScale`, `yScale`, `width`, `height`, `rotate`, `opacity` and `blendMode`.
+- `drawPage` takes `x`, `y`, `xScale`, `yScale`, `width`, `height`, `rotate`, `xSkew`, `ySkew`, `opacity` and `blendMode`.
 - To make many files from one template, load the template once and embed its pages into each new document. Shared parts, like fonts, are copied only once per document.
 
 ## Coming from pdf-lib
@@ -267,18 +269,20 @@ They all extend `PDFLibError`.
 
 ## Differences from pdf-lib
 
-Most of these are fixes or small extras. Your pdf-lib code works the same.
+This list compares with pdf-lib 1.17.1.
+Most of these are fixes or small extras. Most pdf-lib code works without changes.
 
 ### Documents
 
 - The default producer is `dox_pdf_lib (...)`, not `pdf-lib (...)`. `getLanguage()` is an extra.
-- Sizes and boxes keep about 7 digits: `595.28` stays `595.28`, `12345.678` becomes `12345.68`.
+- Sizes and boxes keep about 7 digits: `595.28` stays `595.28`, `123456.789` becomes `123456.79`.
 - A page with no size at all (no MediaBox) reads as US Letter. pdf-lib throws an error.
 - NaN and infinity in page sizes and boxes throw an `ArgumentError`.
+- There is no low-level object API: no `doc.context`, `doc.catalog`, `PDFDict` or `PDFName`, and no `doc.copy()`.
 - A bad page index in `copyPages`, and a file that has only a header, throw clear errors. pdf-lib fails with a `TypeError`.
 - `load(..., ignoreEncryption: true)`:
   - A file with only an owner password (it opens with no password) is decrypted. `isEncrypted` stays true. `save()` writes the file without encryption.
-  - A file with a user password throws `PDFParsingError`. pdf-lib still lists its pages, but they can not be read.
+  - A file with a user password throws `PDFParsingError`. pdf-lib still lists its pages, but they cannot be read.
 
 ### Drawing
 
@@ -289,7 +293,7 @@ Most of these are fixes or small extras. Your pdf-lib code works the same.
 
 ### Fonts
 
-- Complex scripts (Thai, Lao, Myanmar, Khmer, Indic, Arabic, Hebrew and others) are laid out like HarfBuzz, not like fontkit. fontkit draws some of them wrong or can not lay them out at all. Their widths are HarfBuzz widths.
+- Complex scripts (Thai, Lao, Myanmar, Khmer, Indic, Arabic, Hebrew and others) are laid out like HarfBuzz, not like fontkit. fontkit draws some of them wrong or cannot lay them out at all. Their widths are HarfBuzz widths.
 - Right-to-left text with numbers or English words follows the Unicode bidi rules. pdf-lib draws numbers in reversed order.
 - With `wordBreaks: ['']`, a line never breaks between a letter and its marks.
 - Glyphs that pdf-lib leaves out of the font widths are included, so they are not drawn too wide. Copy and paste works for them too.
@@ -301,14 +305,14 @@ Most of these are fixes or small extras. Your pdf-lib code works the same.
 - A field with no `/DA` takes it from its parent field or the form, as the PDF standard says.
 - `removeField` and `flatten` also remove the widgets from their pages. pdf-lib leaves broken references behind.
 - `flatten` skips a broken widget (no page or no look). pdf-lib throws.
-- For options with an export value and a display text (`[(CA) (Canada)]`), `select` takes either one and saves the export value. `getSelected` returns the display text. pdf-lib saves the display text.
+- Some options have a short export value and a longer display text, for example `CA` and `Canada`. `select` takes either one and saves the export value. `getSelected` returns the display text. pdf-lib saves the display text.
 - A combed text field with more than 1000 cells is drawn as one normal line.
 - There are no custom appearance providers. `acroField` is a small read-only view.
 - `getForm()` removes XFA data like pdf-lib, but prints no warning.
 
 ### Attachments and placed pages
 
-- `getAttachments()` is an extra: pdf-lib can not read attachments.
+- `getAttachments()` is an extra: pdf-lib cannot read attachments.
 - New attachment names are kept in sorted order, as the PDF standard asks. pdf-lib adds them at the end.
 - Pages of another document are embedded right away. Embedding the same page twice gives the same result, so it is stored once. Pages of the same document are embedded at save, like pdf-lib.
 - If you change a source document after you embed its pages, the next embed sees the change.
@@ -326,6 +330,11 @@ dox_pdf_lib uses Dart build hooks to get its native library. It tries these in o
    ```
 2. A ready-built library from the GitHub release, checked with SHA-256.
 3. A build from source with `cargo`. This needs [Rust](https://rustup.rs).
+
+Use the file name of your system in `lib_path`: `.dylib` on macOS, `.so` on Linux, `.dll` on Windows.
+As a path or git dependency, step 3 comes before step 2, because the source may be newer than the release.
+Step 3 only builds for the system you build on.
+If no step works, the build still passes. Every PDF call then throws an error that says the native library is missing.
 
 Ready-built libraries exist for:
 
