@@ -40,7 +40,18 @@ const List<int> _waitSeconds = <int>[1, 3];
 /// sha256 of each release asset. The release workflow
 /// (.github/workflows/ci.yaml) fills it from `SHA256SUMS` of the release:
 /// `dart run tool/native_hashes.dart v<version>`
-const Map<String, String> _sha256 = <String, String>{};
+const Map<String, String> _sha256 = <String, String>{
+  'dox_pdf_lib-linux-arm64.so':
+      '213e214f7f1ffdbd814f3d6da27e60222950e97e8a318219cb9669bddf9b8bbc',
+  'dox_pdf_lib-linux-x64.so':
+      '9f26117eed20539b71c9b39cd59b52481a12fa7b622e30983c20b9557ec07f59',
+  'dox_pdf_lib-macos-arm64.dylib':
+      '96df3b370bd2f89306061c74fc27acfb53b4dc937abf94ca0998ef1bcf4c03ab',
+  'dox_pdf_lib-macos-x64.dylib':
+      '433ac35a4a9edc5bdc42d9ce07ecde8582810a30712d54a0e6c9114ad9c5718d',
+  'dox_pdf_lib-windows-x64.dll':
+      'a38a46ec9b3aa82e7b8002f9eac86abcc025aba87a5e1cbfedda07c6eb5538a3',
+};
 
 void main(List<String> args) async {
   await build(args, (BuildInput input, BuildOutputBuilder output) async {
