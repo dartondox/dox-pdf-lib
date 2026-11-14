@@ -123,7 +123,7 @@ extension PDFDocumentFonts on PDFDocument {
   /// Embeds one of the 14 standard fonts. [customName] replaces the
   /// `BaseFont` name in the file.
   PDFFont embedStandardFont(StandardFonts font, [String? customName]) {
-    Uint8List name = ascii.encode(customName ?? '');
+    Uint8List name = utf8.encode(customName ?? '');
     Int64List out = Int64List(1);
     check(
       doxPdfEmbedStandardFont(

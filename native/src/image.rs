@@ -7,7 +7,7 @@
 //!   pixel is not opaque. Both are FlateDecode streams.
 
 use std::ffi::c_void;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
@@ -20,9 +20,9 @@ const SOF_MARKERS: [u16; 15] = [
     0xffcf,
 ];
 
-/// Most bytes a PNG may decode to. pdf-lib has no limit; a broken or
-/// hostile file must not take all memory.
-const PNG_LIMIT: usize = 1 << 30;
+/// Most bytes a PNG may decode to (as 8-bit RGBA). pdf-lib has no limit; a
+/// broken or hostile file must not take all memory.
+const PNG_LIMIT: usize = 256 << 20;
 
 fn name(n: &str) -> Object {
     Object::Name(n.as_bytes().to_vec())
@@ -98,49 +98,87 @@ pub struct Png {
     alpha: Option<Vec<u8>>,
 }
 
-/// pdf-lib's `PNG.load` (UPNG `toRGBA8` + `splitAlphaChannel`).
-pub fn decode_png(data: &[u8]) -> Result<Png> {
-    let bad = |e: png::DecodingError| Error::generic(format!("Invalid PNG: {e}"));
+fn png_reader(data: &[u8]) -> Result<png::Reader<Cursor<&[u8]>>> {
     let mut decoder = png::Decoder::new_with_limits(Cursor::new(data), png::Limits { bytes: PNG_LIMIT });
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = decoder.read_info().map_err(bad)?;
+    decoder.read_info().map_err(bad_png)
+}
+
+fn bad_png(e: png::DecodingError) -> Error {
+    Error::generic(format!("Invalid PNG: {e}"))
+}
+
+/// The size of the image as 8-bit RGBA, from the PNG header only. Errors
+/// when it is over `PNG_LIMIT`.
+pub fn png_decoded_size(data: &[u8]) -> Result<usize> {
+    let reader = png_reader(data)?;
+    let (w, h) = reader.info().size();
+    let size = (w as usize).saturating_mul(h as usize).saturating_mul(4);
+    if size > PNG_LIMIT {
+        return Err(Error::generic(format!(
+            "the PNG image is too big: {w} x {h} pixels (at most {} MiB decoded)",
+            PNG_LIMIT >> 20
+        )));
+    }
+    Ok(size)
+}
+
+/// pdf-lib's `PNG.load` (UPNG `toRGBA8` + `splitAlphaChannel`). Rows are
+/// converted one by one: the RGB part goes straight into the compressor, so
+/// only the alpha (1 byte per pixel) is held in full.
+pub fn decode_png(data: &[u8]) -> Result<Png> {
+    png_decoded_size(data)?;
+    let mut reader = png_reader(data)?;
     if reader.info().animation_control.is_some_and(|a| a.num_frames > 1) {
         return Err(Error::generic("Animated PNGs are not supported"));
     }
-    let size = reader
-        .output_buffer_size()
-        .filter(|s| *s <= PNG_LIMIT)
-        .ok_or_else(|| Error::generic("the PNG image is too big"))?;
-    let mut buf = vec![0; size];
-    let frame = reader.next_frame(&mut buf).map_err(bad)?;
-    let (width, height) = (frame.width, frame.height);
+    let (width, height) = reader.info().size();
+    let (color, _) = reader.output_color_type();
     let pixels = width as usize * height as usize;
-    let mut rgb = Vec::with_capacity(pixels * 3);
+    let mut rgb = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     let mut alpha = Vec::with_capacity(pixels);
-    let line = frame.line_size;
-    for row in buf.chunks(line).take(height as usize) {
-        let row = &row[..line.min(row.len())];
-        match frame.color_type {
+    let mut line = Vec::with_capacity(width as usize * 3);
+    let mut convert = |row: &[u8]| -> Result<()> {
+        line.clear();
+        match color {
             png::ColorType::Grayscale => row.iter().for_each(|g| {
-                rgb.extend([*g, *g, *g]);
+                line.extend([*g, *g, *g]);
                 alpha.push(255);
             }),
             png::ColorType::GrayscaleAlpha => row.as_chunks::<2>().0.iter().for_each(|p| {
-                rgb.extend([p[0], p[0], p[0]]);
+                line.extend([p[0], p[0], p[0]]);
                 alpha.push(p[1]);
             }),
             png::ColorType::Rgb => row.as_chunks::<3>().0.iter().for_each(|p| {
-                rgb.extend_from_slice(p);
+                line.extend_from_slice(p);
                 alpha.push(255);
             }),
             png::ColorType::Rgba => row.as_chunks::<4>().0.iter().for_each(|p| {
-                rgb.extend_from_slice(&p[..3]);
+                line.extend_from_slice(&p[..3]);
                 alpha.push(p[3]);
             }),
             png::ColorType::Indexed => {} // EXPAND makes it RGB(A)
         }
+        Ok(rgb.write_all(&line)?)
+    };
+    if reader.info().interlaced {
+        // the passes of an interlaced image only make whole rows at the end
+        let mut buf = vec![
+            0;
+            reader
+                .output_buffer_size()
+                .ok_or_else(|| Error::generic("Invalid PNG"))?
+        ];
+        let frame = reader.next_frame(&mut buf).map_err(bad_png)?;
+        for row in buf.chunks(frame.line_size).take(height as usize) {
+            convert(row)?;
+        }
+    } else {
+        while let Some(row) = reader.next_row().map_err(bad_png)? {
+            convert(row.data())?;
+        }
     }
-    if rgb.len() != pixels * 3 {
+    if alpha.len() != pixels {
         return Err(Error::generic("Invalid PNG: unexpected pixel format"));
     }
     let alpha = if alpha.iter().any(|a| *a < 255) {
@@ -151,7 +189,7 @@ pub fn decode_png(data: &[u8]) -> Result<Png> {
     Ok(Png {
         width,
         height,
-        rgb: deflate(&rgb)?,
+        rgb: rgb.finish()?,
         alpha,
     })
 }
@@ -215,7 +253,8 @@ fn add_png_out(handle: *const c_void, png: Png, out: *mut i64) -> Result<i32> {
     Ok(OK)
 }
 
-/// Small input: `out` = image ref, width, height; returns `OK`. Big input:
+/// Small image (decoded size under 1 MiB): `out` = image ref, width,
+/// height; returns `OK`. Big image:
 /// decodes on a Rust thread (it does not touch the document) and returns
 /// `PENDING`; `done` gets a decoded-image pointer for `dox_pdf_png_add`.
 #[unsafe(no_mangle)]
@@ -229,7 +268,8 @@ pub extern "C" fn dox_pdf_embed_png(
 ) -> i32 {
     call(|| {
         let data = slice(bytes, len)?;
-        if data.len() < ASYNC_THRESHOLD {
+        // by the decoded size: a small file can be a huge image
+        if png_decoded_size(data)? < ASYNC_THRESHOLD {
             return add_png_out(handle, decode_png(data)?, out);
         }
         let data = data.to_vec();
@@ -320,6 +360,20 @@ mod tests {
         let mut cmyk = jpg;
         cmyk[17] = 5;
         assert_eq!(jpeg_info(&cmyk).unwrap_err().message, "Unknown JPEG channel.");
+    }
+
+    #[test]
+    fn png_size_comes_from_the_header() {
+        // a small file can be a big image: the decoded size picks the thread
+        let gray = vec![0u8; 600 / 8 * 600];
+        let file = encode_png(600, 600, png::ColorType::Grayscale, png::BitDepth::One, &gray);
+        assert!(file.len() < 10_000);
+        assert!(png_decoded_size(&file).unwrap() >= ASYNC_THRESHOLD);
+        assert_eq!(decode_png(&file).unwrap().width, 600);
+        // over the cap: an error from the header, before any decoding
+        let gray = vec![0u8; 9000 / 8 * 8000];
+        let file = encode_png(9000, 8000, png::ColorType::Grayscale, png::BitDepth::One, &gray);
+        assert!(decode_png(&file).err().unwrap().message.contains("too big"));
     }
 
     #[test]

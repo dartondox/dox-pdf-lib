@@ -85,6 +85,11 @@ void main() {
     expect(helvetica.encodeText('Hi').toString(), '<4869>');
     PDFFont custom = doc.embedStandardFont(StandardFonts.courier, 'MyCourier');
     expect(custom.name, 'Courier');
+    // a custom name that is not ASCII is fine (UTF-8, escaped in the name)
+    PDFFont unicode = doc.embedStandardFont(StandardFonts.courier, 'Schrift ü');
+    doc.addPage().drawText('x', font: unicode);
+    PDFDocument again = await PDFDocument.load(await doc.save());
+    expect(again.getPageCount(), 1);
   });
 
   test('text a font can not encode throws like pdf-lib', () async {
@@ -160,10 +165,11 @@ void main() {
     );
     PDFDocument other = await PDFDocument.create();
     PDFFont foreign = other.embedStandardFont(StandardFonts.courier);
-    expect(
-      () => page.drawText('a', font: foreign),
-      throwsA(isA<PDFLibError>()),
-    );
+    expect(() => page.drawText('a', font: foreign), throwsArgumentError);
+    page.setFont(foreign);
+    expect(() => page.drawText('a'), throwsArgumentError);
+    PDFImage image = await other.embedJpg(_fixture('rgb.jpg'));
+    expect(() => page.drawImage(image), throwsArgumentError);
   });
 
   test('images: size, errors, and a big PNG on a native thread', () async {
@@ -201,6 +207,27 @@ void main() {
     expect(small.width, 40);
     doc.addPage().drawImage(image);
     expect(await doc.save(), isNotEmpty);
+  });
+
+  test('an SVG path with missing numbers throws', () async {
+    PDFDocument doc = await PDFDocument.create();
+    PDFPage page = doc.addPage();
+    for (String path in <String>['M 1 2 L', 'M', 'M1E-3 2', 'M1.2.3.4']) {
+      expect(
+        () => page.drawSvgPath(path),
+        throwsA(isA<PDFLibError>()),
+        reason: path,
+      );
+    }
+    page.drawSvgPath('M1e-3 2 L 3 4');
+  });
+
+  test('a small PNG file of a big image is embedded', () async {
+    // 1-bit gray, 2000 x 2000: a small file, 16 MB as RGBA, so it is
+    // decoded on a native thread
+    PDFDocument doc = await PDFDocument.create();
+    PDFImage image = await doc.embedPng(_fixture('big-gray1.png'));
+    expect((image.width, image.height), (2000, 2000));
   });
 
   test('operators write numbers like pdf-lib', () {

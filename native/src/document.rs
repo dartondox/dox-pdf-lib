@@ -476,9 +476,7 @@ pub fn prepare_save(doc: &mut Doc, flags: i32) -> Result<Document> {
     // The copy is made here, on the caller's thread, so the file has the
     // document as it was when save was called. Measured on an 11 MB file
     // with 200 pages: copy 2.4 ms, write 2.8 ms.
-    let mut pdf = doc.pdf.clone();
-    crate::draw::flate_streams(&doc.draw, &mut pdf)?;
-    Ok(pdf)
+    Ok(doc.pdf.clone())
 }
 
 /// Writes the file, without the lock.
@@ -506,6 +504,7 @@ pub fn write(mut pdf: Document, flags: i32) -> Result<Vec<u8>> {
     ] {
         pdf.trailer.remove(key);
     }
+    crate::draw::flate_page_contents(&mut pdf)?;
     let options = SaveOptions::builder()
         .use_object_streams(streams)
         .use_xref_streams(streams)

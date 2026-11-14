@@ -3,7 +3,7 @@
 //! Dart draw call is one FFI call (`dox_pdf_draw`); the content stream is
 //! built here and compressed (FlateDecode) on save, like pdf-lib does.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::f64::consts::PI;
 use std::ffi::c_void;
 use std::io::Write;
@@ -21,8 +21,6 @@ pub struct DrawState {
     /// Embedded standard fonts: font ref -> `StandardFonts` index.
     pub fonts: HashMap<ObjectId, i32>,
     pages: HashMap<ObjectId, PageState>,
-    /// Content streams written here. They are compressed on save.
-    streams: BTreeSet<ObjectId>,
     /// The shared `q` and `Q` streams that wrap old page content.
     push_pop: Option<(ObjectId, ObjectId)>,
 }
@@ -64,10 +62,15 @@ const KAPPA: f64 = 4.0 * ((std::f64::consts::SQRT_2 - 1.0) / 3.0);
 
 // ------------------------------------------------------------ the page
 
-fn new_stream(pdf: &mut Document, state: &mut DrawState, content: Vec<u8>) -> ObjectId {
-    let id = pdf.add_object(Object::Stream(Stream::new(Dictionary::new(), content)));
-    state.streams.insert(id);
-    id
+/// Marks a content stream made here, so save compresses it. A copied page
+/// keeps the mark, so its copy is compressed too. Save removes the mark
+/// from the file it writes.
+const PLAIN_MARK: &[u8] = b"DoxPdfLibPlain";
+
+fn new_stream(pdf: &mut Document, content: Vec<u8>) -> ObjectId {
+    let mut dict = Dictionary::new();
+    dict.set(PLAIN_MARK, Object::Boolean(true));
+    pdf.add_object(Object::Stream(Stream::new(dict, content)))
 }
 
 /// pdf-lib's `PDFPageLeaf.normalize`: `Contents` becomes an array, old
@@ -107,10 +110,7 @@ fn normalize(pdf: &mut Document, state: &mut DrawState, page: ObjectId) -> Resul
             let (push, pop) = match state.push_pop {
                 Some(p) => p,
                 None => {
-                    let p = (
-                        new_stream(pdf, state, b"q\n".to_vec()),
-                        new_stream(pdf, state, b"Q\n".to_vec()),
-                    );
+                    let p = (new_stream(pdf, b"q\n".to_vec()), new_stream(pdf, b"Q\n".to_vec()));
                     state.push_pop = Some(p);
                     p
                 }
@@ -148,7 +148,7 @@ fn content_stream(pdf: &mut Document, state: &mut DrawState, page: ObjectId, fre
     if !fresh && let Some(id) = state.pages.get(&page).and_then(|p| p.content) {
         return Ok(id);
     }
-    let id = new_stream(pdf, state, Vec::new());
+    let id = new_stream(pdf, Vec::new());
     contents_mut(pdf, page)?.push(Object::Reference(id));
     state.pages.entry(page).or_default().content = Some(id);
     Ok(id)
@@ -460,8 +460,12 @@ fn break_lines(text: &str, breaks: &[Vec<char>], max_width: f64, f: &font::Font,
 // ------------------------------------------------------------ SVG path
 
 /// pdf-lib's `svgPathToOperators` (from pdfkit), with the same quirks.
-fn svg_path(path: &str, out: &mut Ops) {
-    Svg::default().apply(&parse_svg(path), out);
+///
+/// One difference: a command with too few numbers (eg. `M 1 2 L`) is an
+/// error here. pdf-lib throws for most of them too, but writes `NaN` for
+/// some (relative commands) and nothing for an arc.
+fn svg_path(path: &str, out: &mut Ops) -> Result<()> {
+    Svg::default().apply(&parse_svg(path), out)
 }
 
 fn svg_params(c: char) -> Option<usize> {
@@ -576,12 +580,19 @@ struct Svg {
 }
 
 impl Svg {
-    fn apply(&mut self, cmds: &[SvgCmd], out: &mut Ops) {
+    fn apply(&mut self, cmds: &[SvgCmd], out: &mut Ops) -> Result<()> {
         self.px = Some(0.0);
         self.py = Some(0.0);
         for (cmd, args) in cmds {
             let Some(cmd) = cmd else { continue };
-            // a missing arg is `undefined` in pdf-lib, so NaN in the math
+            let needed = svg_params(*cmd).unwrap_or(0);
+            if args.len() < needed {
+                return Err(Error::generic(format!(
+                    "Invalid SVG path: `{cmd}` needs {needed} numbers, but has {}",
+                    args.len()
+                )));
+            }
+            // a text that is not a number is NaN, like in pdf-lib
             let a = |i: usize| args.get(i).copied().unwrap_or(f64::NAN);
             match cmd {
                 'M' | 'm' => {
@@ -694,6 +705,7 @@ impl Svg {
                 _ => {}
             }
         }
+        Ok(())
     }
 
     /// pdf-lib's `solveArc` + `arcToSegments` + `segmentToBezier` (from
@@ -1001,7 +1013,7 @@ pub fn draw(doc: &mut Doc, page: ObjectId, kind: i32, nums: &[f64], bytes: &[u8]
             }
             o.line_cap(a(5)?);
             o.dash(input.dashes(ARGS + 7)?, a(6)?);
-            svg_path(path, &mut o);
+            svg_path(path, &mut o)?;
             o.paint(has(input.color()), has(input.border_color()), border);
             o.op(&[], "Q");
         }
@@ -1025,8 +1037,8 @@ fn wrap_content(pdf: &mut Document, state: &mut DrawState, page: ObjectId, cm: [
     let mut o = Ops::default();
     o.op(&[], "q");
     o.cm(cm);
-    let start = new_stream(pdf, state, o.0);
-    let end = new_stream(pdf, state, b"Q\n".to_vec());
+    let start = new_stream(pdf, o.0);
+    let end = new_stream(pdf, b"Q\n".to_vec());
     let list = contents_mut(pdf, page)?;
     list.insert(0, Object::Reference(start));
     list.push(Object::Reference(end));
@@ -1122,12 +1134,17 @@ pub fn change_page(doc: &mut Doc, page: ObjectId, kind: i32, x: f64, y: f64) -> 
 
 // ------------------------------------------------------------ save
 
-/// Compresses the content streams of this module (FlateDecode, like
-/// pdf-lib) in `pdf`, the copy that save writes. The document keeps them
-/// plain, so later draw calls can append to them.
-pub fn flate_streams(state: &DrawState, pdf: &mut Document) -> Result<()> {
-    for id in &state.streams {
-        if let Some(Object::Stream(s)) = pdf.objects.get_mut(id) {
+/// Compresses (FlateDecode) the content streams made by draw calls (and
+/// their copies), like pdf-lib writes its content streams. Other plain
+/// streams stay as they are, like in pdf-lib. Save runs it on the copy it
+/// writes, without the lock; the document keeps the streams plain, so
+/// later draw calls can append to them.
+pub fn flate_page_contents(pdf: &mut Document) -> Result<()> {
+    for obj in pdf.objects.values_mut() {
+        if let Object::Stream(s) = obj
+            && s.dict.remove(PLAIN_MARK).is_some()
+            && !s.dict.has(b"Filter")
+        {
             let packed = deflate(&s.content)?;
             s.set_content(packed);
             s.dict.set("Filter", Object::Name(b"FlateDecode".to_vec()));
@@ -1190,6 +1207,12 @@ mod tests {
         String::from_utf8(o.0).unwrap()
     }
 
+    fn svg(path: &str) -> Result<String> {
+        let mut o = Ops::default();
+        svg_path(path, &mut o)?;
+        Ok(String::from_utf8(o.0).unwrap())
+    }
+
     #[test]
     fn numbers_like_pdf_lib() {
         let s = |v: f64| {
@@ -1205,19 +1228,34 @@ mod tests {
     }
 
     #[test]
+    fn svg_missing_numbers_are_an_error() {
+        // pdf-lib 1.17.1 throws for these too
+        for path in ["M 1 2 L", "M", "M1,2,,3", "M 1 2 3", "M1E-3 2", "M1.2.3.4"] {
+            assert!(svg(path).unwrap_err().message.contains("Invalid SVG path"), "{path}");
+        }
+        // outputs of pdf-lib 1.17.1
+        assert_eq!(svg("M1e-3 2").unwrap(), "0.001 2 m\n");
+        assert_eq!(svg("M 1 2 L 3 x").unwrap(), "1 2 m\n3 NaN l\n");
+        assert_eq!(svg("10 20 L 1 2").unwrap(), "10 20 l\n1 2 l\n");
+        assert_eq!(svg("M 5 6 Z 1").unwrap(), "5 6 m\nh\nh\n");
+    }
+
+    #[test]
     fn svg_paths_like_pdf_lib() {
         // outputs of pdf-lib 1.17.1 svgPathToOperators
         assert_eq!(
-            ops(|o| svg_path("M 10,10 L 20 20 h5 v-5 Z", o)),
+            ops(|o| { svg_path("M 10,10 L 20 20 h5 v-5 Z", o).unwrap() }),
             "10 10 m\n20 20 l\n25 20 l\n25 15 l\nh\n"
         );
-        assert_eq!(ops(|o| svg_path("M1-2.5.5.5", o)), "1 -2.5 m\n0.5 0.5 l\n");
+        assert_eq!(ops(|o| { svg_path("M1-2.5.5.5", o).unwrap() }), "1 -2.5 m\n0.5 0.5 l\n");
         assert_eq!(
-            ops(|o| svg_path("M0 0 Q 5 5 10 0 T 20 0", o)),
+            ops(|o| { svg_path("M0 0 Q 5 5 10 0 T 20 0", o).unwrap() }),
             "0 0 m\n5 5 10 0 v\n15 -5 20 0 v\n"
         );
         assert_eq!(
-            ops(|o| svg_path("M0 0 A 10 10 0 0 1 20 0", o)).matches(" c\n").count(),
+            ops(|o| { svg_path("M0 0 A 10 10 0 0 1 20 0", o).unwrap() })
+                .matches(" c\n")
+                .count(),
             2
         );
     }
@@ -1279,6 +1317,42 @@ mod tests {
         assert!(
             d.pdf
                 .get_object(stream)
+                .unwrap()
+                .as_stream()
+                .unwrap()
+                .dict
+                .get(b"Filter")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn save_compresses_plain_page_content() {
+        // eg. a page copied from a drawn page: a plain stream with the mark
+        let mut d = create(false, b"");
+        let p = new_page(&mut d.pdf, 100.0, 100.0);
+        insert_page(&mut d.pdf, 0, p).unwrap();
+        let plain = new_stream(&mut d.pdf, b"0 0 m\n".to_vec());
+        let other = d
+            .pdf
+            .add_object(Object::Stream(Stream::new(Dictionary::new(), b"1 1 m\n".to_vec())));
+        let list = vec![Object::Reference(plain), Object::Reference(other)];
+        page_dict_mut(&mut d.pdf, p)
+            .unwrap()
+            .set("Contents", Object::Array(list));
+        let bytes = crate::document::save(&mut d, 0).unwrap();
+        let again = crate::document::load(&bytes, 0, b"").unwrap();
+        let s = again.pdf.get_object(plain).unwrap().as_stream().unwrap();
+        assert_eq!(s.dict.get(b"Filter").unwrap().as_name().unwrap(), b"FlateDecode");
+        assert_eq!(s.decompressed_content().unwrap(), b"0 0 m\n");
+        assert!(!s.dict.has(PLAIN_MARK));
+        // a plain stream not made here (eg. from a loaded file) stays plain
+        let o = again.pdf.get_object(other).unwrap().as_stream().unwrap();
+        assert!(o.dict.get(b"Filter").is_err());
+        // the document in memory keeps it plain
+        assert!(
+            d.pdf
+                .get_object(plain)
                 .unwrap()
                 .as_stream()
                 .unwrap()

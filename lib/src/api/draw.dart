@@ -194,6 +194,13 @@ extension PDFPageDrawing on PDFPage {
   }) {
     _TextState s = _state;
     PDFFont f = font ?? _font();
+    if (f.doc != doc) {
+      throw ArgumentError.value(
+        f.name,
+        'font',
+        'is from a different PDFDocument; embed it in this one',
+      );
+    }
     // pdf-lib: `options.size || this.fontSize`
     double fontSize = (size == null || size == 0 || size.isNaN)
         ? s.fontSize
@@ -243,6 +250,13 @@ extension PDFPageDrawing on PDFPage {
     double? opacity,
     BlendMode? blendMode,
   }) {
+    if (image.doc != doc) {
+      throw ArgumentError.value(
+        image,
+        'image',
+        'is from a different PDFDocument; embed it in this one',
+      );
+    }
     _draw(kindImage, <double>[
       ..._head(opacity: opacity, blendMode: blendMode),
       image.ref.toDouble(),
