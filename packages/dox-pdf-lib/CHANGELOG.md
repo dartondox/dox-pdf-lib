@@ -1,3 +1,7 @@
+## Unreleased
+
+- The ready-built Linux libraries do not need `libgcc_s.so.1`. They need only glibc 2.34 or newer, as before. A `FROM scratch` Docker image with the Dart `/runtime/` files does not need a copy of `libgcc_s.so.1` for this package. The release build now links the Linux libraries with `cargo zigbuild`, and CI does a check of each library.
+
 ## 0.0.3
 
 - New: PDF/X and PDF/A. `setConformance(standard, iccProfile: ..., outputConditionIdentifier: ...)` sets up a document for PDF/X-1a, PDF/X-3, PDF/X-4, PDF/A-1b, PDF/A-2b, PDF/A-2u, PDF/A-3b or PDF/A-3u: the output intent now, and at save the PDF version, the file `/ID`, XMP metadata in sync with the document info, and the PDF/X info keys. `checkConformance(standard)` lists what is still wrong in your content (fonts not embedded, transparency, colors, page boxes, annotations, actions, attachments, ...), with the page and a plain message. The default save is not changed. See "PDF/X and PDF/A" in the README.
